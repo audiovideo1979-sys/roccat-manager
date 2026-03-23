@@ -1,0 +1,16 @@
+1.Left
+2.Right
+3.Middle
+4.Scroll up			ES - Volume up
+5.Scroll Down			ES - Volume Down
+6.Tilt Left			ES - Prev Track
+7.Tilt Right			ES - Next Track
+8. Hotkey G			ES - Hotkey F2
+9. Hotkey Alt C			ES - Hotkey F1	
+10.Browser Backward		ES - Page Up
+11.Browser Forward		ES - Page Down
+12.Hotkey Left Shift		ES - Hotkey Del
+13.Hotkey Q			ES - Insert
+14.Easy Shift
+
+DPI 950

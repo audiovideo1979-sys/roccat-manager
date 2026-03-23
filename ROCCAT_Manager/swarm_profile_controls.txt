@@ -1,0 +1,228 @@
+Control Identifiers:
+
+Dialog - 'Turtle Beach Swarm II'    (L2736, T162, R3936, B1484)
+['Turtle Beach Swarm II', 'Dialog', 'Turtle Beach Swarm IIDialog']
+child_window(title="Turtle Beach Swarm II", auto_id="swarm_kernel_fm_c", control_type="Window")
+   | 
+   | GroupBox - ''    (L2736, T162, R3936, B234)
+   | ['GroupBox', 'SWARM IIGroupBox', 'GroupBox0', 'GroupBox1', 'SWARM IIGroupBox0', 'SWARM IIGroupBox1']
+   | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area", control_type="Group")
+   |    | 
+   |    | GroupBox - ''    (L2736, T162, R2936, B234)
+   |    | ['GroupBox2', 'SWARM IIGroupBox2']
+   |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_logo_area", control_type="Group")
+   |    |    | 
+   |    |    | GroupBox - ''    (L2752, T189, R2776, B213)
+   |    |    | ['GroupBox3']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_logo_area.wg_logo", control_type="Group")
+   |    |    | 
+   |    |    | GroupBox - ''    (L2786, T192, R2788, B209)
+   |    |    | ['GroupBox4']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_logo_area.widget", control_type="Group")
+   |    |    | 
+   |    |    | Static - 'SWARM II'    (L2796, T189, R2957, B213)
+   |    |    | ['Static', 'SWARM II', 'SWARM IIStatic', 'Static0', 'Static1']
+   |    |    | child_window(title="SWARM II", auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_logo_area.lb_swarm_ii", control_type="Text")
+   |    | 
+   |    | GroupBox - ''    (L2936, T162, R3478, B234)
+   |    | ['GroupBox5', 'SWARM IIGroupBox3']
+   |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_global_profile_area", control_type="Group")
+   |    | 
+   |    | GroupBox - ''    (L3478, T162, R3728, B234)
+   |    | ['GroupBox6', 'Up to dateGroupBox', 'Up to dateGroupBox0', 'Up to dateGroupBox1']
+   |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_process_area", control_type="Group")
+   |    |    | 
+   |    |    | GroupBox - ''    (L3478, T162, R3728, B234)
+   |    |    | ['GroupBox7', 'Up to dateGroupBox2']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_process_area.process_fm_c", control_type="Group")
+   |    |    |    | 
+   |    |    |    | Static - 'Up to date'    (L3626, T162, R3698, B234)
+   |    |    |    | ['Static2', 'Up to date', 'Up to dateStatic', 'Up to dateStatic0', 'Up to dateStatic1', 'Up to date0', 'Up to date1']
+   |    |    |    | child_window(title="Up to date", auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_process_area.process_fm_c.lb_status", control_type="Text")
+   |    |    |    | 
+   |    |    |    | Static - ''    (L3702, T185, R3728, B211)
+   |    |    |    | ['Static3', 'Up to dateStatic2']
+   |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_process_area.process_fm_c.lb_icon", control_type="Text")
+   |    | 
+   |    | GroupBox - ''    (L3728, T162, R3784, B234)
+   |    | ['GroupBox8', 'Up to dateGroupBox3']
+   |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_notification_area", control_type="Group")
+   |    |    | 
+   |    |    | GroupBox - ''    (L3740, T182, R3772, B214)
+   |    |    | ['GroupBox9', 'Up to dateGroupBox4']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_notification_area.wg_notification_btn", control_type="Group")
+   |    |    |    | 
+   |    |    |    | Button - ''    (L3740, T182, R3772, B214)
+   |    |    |    | ['Up to dateButton', 'Button', 'Up to dateButton0', 'Up to dateButton1', 'Button0', 'Button1']
+   |    | 
+   |    | GroupBox - ''    (L3784, T162, R3936, B234)
+   |    | ['GroupBox10', 'Up to dateGroupBox5']
+   |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_windows_control_area", control_type="Group")
+   |    |    | 
+   |    |    | Button - ''    (L3796, T184, R3836, B212)
+   |    |    | ['Up to dateButton2', 'Button2']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_windows_control_area.btn_minimized", control_type="Button")
+   |    |    | 
+   |    |    | Button - ''    (L3882, T184, R3922, B212)
+   |    |    | ['Up to dateButton3', 'Button3']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_windows_control_area.btn_close", control_type="Button")
+   |    |    | 
+   |    |    | Button - ''    (L3839, T184, R3879, B212)
+   |    |    | ['Up to dateButton4', 'Button4']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_title_bar_area.wg_windows_control_area.btn_maximized", control_type="Button")
+   | 
+   | GroupBox - ''    (L2736, T234, R3936, B1484)
+   | ['GroupBox11', 'SWARM IIGroupBox4']
+   | child_window(auto_id="swarm_kernel_fm_c.wg_main", control_type="Group")
+   |    | 
+   |    | GroupBox - ''    (L2736, T234, R3936, B1484)
+   |    | ['GroupBox12', 'SWARM IIGroupBox5']
+   |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay", control_type="Group")
+   |    |    | 
+   |    |    | GroupBox - ''    (L2736, T234, R2784, B1484)
+   |    |    | ['GroupBox13']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_side_bar_area", control_type="Group")
+   |    |    |    | 
+   |    |    |    | GroupBox - ''    (L2736, T1228, R2784, B1436)
+   |    |    |    | ['GroupBox14']
+   |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_side_bar_area.wg_controls", control_type="Group")
+   |    |    |    |    | 
+   |    |    |    |    | Button - ''    (L2736, T1228, R2784, B1280)
+   |    |    |    |    | ['Button5']
+   |    |    |    |    | 
+   |    |    |    |    | Button - ''    (L2736, T1280, R2784, B1332)
+   |    |    |    |    | ['Button6']
+   |    |    |    |    | 
+   |    |    |    |    | Button - ''    (L2736, T1332, R2784, B1384)
+   |    |    |    |    | ['Button7']
+   |    |    |    |    | 
+   |    |    |    |    | Button - ''    (L2736, T1384, R2784, B1436)
+   |    |    |    |    | ['Button8']
+   |    |    |    | 
+   |    |    |    | GroupBox - ''    (L2736, T234, R2784, B328)
+   |    |    |    | ['GroupBox15']
+   |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_side_bar_area.wg_back", control_type="Group")
+   |    |    |    |    | 
+   |    |    |    |    | Button - ''    (L2736, T234, R2784, B282)
+   |    |    |    |    | ['Button9']
+   |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_side_bar_area.wg_back.btn_back", control_type="Button")
+   |    |    |    | 
+   |    |    |    | GroupBox - ''    (L2736, T328, R2784, B472)
+   |    |    |    | ['GroupBox16']
+   |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_side_bar_area.wg_device_controls", control_type="Group")
+   |    |    |    |    | 
+   |    |    |    |    | GroupBox - ''    (L2736, T328, R2784, B472)
+   |    |    |    |    | ['GroupBox17']
+   |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_side_bar_area.wg_device_controls.buttons_tab", control_type="Group")
+   |    |    |    | 
+   |    |    |    | Custom - ''    (L2736, T472, R2784, B1228)
+   |    |    |    | ['Custom', 'Custom0', 'Custom1']
+   |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_side_bar_area.line", control_type="Custom")
+   |    |    | 
+   |    |    | GroupBox - ''    (L2784, T234, R3936, B1484)
+   |    |    | ['GroupBox18', 'SWARM IIGroupBox6']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_module_content", control_type="Group")
+   |    |    |    | 
+   |    |    |    | GroupBox - ''    (L2786, T234, R3936, B1460)
+   |    |    |    | ['GroupBox19', 'SWARM IIGroupBox7']
+   |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_module_content.wg_tabwidget", control_type="Group")
+   |    |    |    |    | 
+   |    |    |    |    | Custom - ''    (L2786, T234, R3936, B1460)
+   |    |    |    |    | ['SWARM IICustom', 'Custom2']
+   |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_module_content.wg_tabwidget.qt_tabwidget_stackedwidget", control_type="Custom")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | GroupBox - ''    (L2786, T234, R3936, B1460)
+   |    |    |    |    |    | ['GroupBox20', 'SWARM IIGroupBox8']
+   |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_module_content.wg_tabwidget.qt_tabwidget_stackedwidget.tab_device_widget", control_type="Group")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | GroupBox - ''    (L2786, T234, R3936, B1460)
+   |    |    |    |    |    |    | ['GroupBox21', 'SWARM IIGroupBox9']
+   |    |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_module_content.wg_tabwidget.qt_tabwidget_stackedwidget.tab_device_widget.main_page_fm_c", control_type="Group")
+   |    |    |    |    | 
+   |    |    |    |    | TabControl - 'Tab 2'    (L0, T0, R0, B0)
+   |    |    |    |    | ['Tab 24', 'Tab 2TabControl2', 'TabControl3']
+   |    |    |    |    | child_window(title="Tab 2", auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_module_content.wg_tabwidget.qt_tabwidget_tabbar", control_type="Tab")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | TabItem - 'Tab 1'    (L0, T0, R0, B0)
+   |    |    |    |    |    | ['Tab 14', 'TabItem6', 'Tab 1TabItem3']
+   |    |    |    |    |    | child_window(title="Tab 1", control_type="TabItem")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | TabItem - 'Tab 2'    (L0, T0, R0, B0)
+   |    |    |    |    |    | ['Tab 2TabItem3', 'Tab 25', 'TabItem7']
+   |    |    |    |    |    | child_window(title="Tab 2", control_type="TabItem")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Button - 'Scroll Left'    (L0, T0, R0, B0)
+   |    |    |    |    |    | ['Scroll LeftButton3', 'Button41', 'Scroll Left3']
+   |    |    |    |    |    | child_window(title="Scroll Left", auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_module_content.wg_tabwidget.qt_tabwidget_tabbar.ScrollLeftButton", control_type="Button")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Button - 'Scroll Right'    (L0, T0, R0, B0)
+   |    |    |    |    |    | ['Scroll Right3', 'Scroll RightButton3', 'Button42']
+   |    |    |    |    |    | child_window(title="Scroll Right", auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.wg_module_content.wg_tabwidget.qt_tabwidget_tabbar.ScrollRightButton", control_type="Button")
+   |    |    | 
+   |    |    | GroupBox - ''    (L2736, T234, R3936, B1484)
+   |    |    | ['GroupBox136', 'SWARM IIGroupBox11']
+   |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c", control_type="Group")
+   |    |    |    | 
+   |    |    |    | GroupBox - ''    (L2736, T234, R3936, B1484)
+   |    |    |    | ['GroupBox137', 'SWARM IIGroupBox12']
+   |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content", control_type="Group")
+   |    |    |    |    | 
+   |    |    |    |    | GroupBox - ''    (L2736, T234, R2784, B1484)
+   |    |    |    |    | ['GroupBox138']
+   |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_left_bar", control_type="Group")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Button - ''    (L2736, T234, R2784, B282)
+   |    |    |    |    |    | ['Button43']
+   |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_left_bar.btn_back", control_type="Button")
+   |    |    |    |    | 
+   |    |    |    |    | GroupBox - ''    (L2784, T234, R3936, B332)
+   |    |    |    |    | ['GroupBox139', 'SWARM IIGroupBox13']
+   |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_top_bar", control_type="Group")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Static - 'PROFILE MANAGER'    (L2804, T284, R3065, B300)
+   |    |    |    |    |    | ['Static32', 'PROFILE MANAGER', 'PROFILE MANAGERStatic']
+   |    |    |    |    |    | child_window(title="PROFILE MANAGER", auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_top_bar.lb_tab_name", control_type="Text")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Button - 'EXPORT PROFILES'    (L3765, T276, R3912, B300)
+   |    |    |    |    |    | ['EXPORT PROFILES', 'EXPORT PROFILESButton', 'Button44']
+   |    |    |    |    |    | child_window(title="EXPORT PROFILES", auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_top_bar.btn_export", control_type="Button")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Button - 'IMPORT PROFILES'    (L3595, T276, R3741, B300)
+   |    |    |    |    |    | ['IMPORT PROFILES', 'IMPORT PROFILESButton', 'Button45']
+   |    |    |    |    |    | child_window(title="IMPORT PROFILES", auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_top_bar.btn_import", control_type="Button")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Static - 'KONE'    (L2804, T244, R2879, B273)
+   |    |    |    |    |    | ['Static33', 'KONE', 'KONEStatic']
+   |    |    |    |    |    | child_window(title="KONE", auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_top_bar.lb_device_name", control_type="Text")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Static - 'XP AIR'    (L2879, T244, R2954, B273)
+   |    |    |    |    |    | ['Static34', 'XP AIRStatic2', 'XP AIR2']
+   |    |    |    |    |    | child_window(title="XP AIR", auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_top_bar.lb_version", control_type="Text")
+   |    |    |    |    | 
+   |    |    |    |    | GroupBox - ''    (L2784, T332, R3936, B1484)
+   |    |    |    |    | ['GroupBox140', 'XP AIRGroupBox2', 'SETTINGSGroupBox7']
+   |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_span", control_type="Group")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | GroupBox - ''    (L2784, T332, R3320, B1454)
+   |    |    |    |    |    | ['GroupBox141', 'SETTINGSGroupBox8']
+   |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_span.wg_left_container", control_type="Group")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | GroupBox - ''    (L2784, T412, R3320, B1454)
+   |    |    |    |    |    |    | ['GroupBox142', 'ON-BOARD PROFILESGroupBox11']
+   |    |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_span.wg_left_container.wg_onboard", control_type="Group")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | GroupBox - ''    (L2784, T332, R3320, B412)
+   |    |    |    |    |    |    | ['GroupBox168', 'SETTINGSGroupBox9']
+   |    |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_span.wg_left_container.wg_left_title", control_type="Group")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | GroupBox - ''    (L3400, T332, R3936, B1454)
+   |    |    |    |    |    | ['GroupBox169', 'STORED PROFILESGroupBox7']
+   |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_span.wg_right_container", control_type="Group")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | GroupBox - ''    (L3400, T412, R3936, B1454)
+   |    |    |    |    |    |    | ['GroupBox170', 'STORED PROFILESGroupBox8']
+   |    |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_span.wg_right_container.scrollArea", control_type="Group")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | GroupBox - ''    (L3400, T332, R3936, B412)
+   |    |    |    |    |    |    | ['GroupBox215', 'STORED PROFILESGroupBox24']
+   |    |    |    |    |    |    | child_window(auto_id="swarm_kernel_fm_c.wg_main.wg_overlay.profile_mgr_page_fm_c.wg_content.wg_span.wg_right_container.wg_right_title", control_type="Group")

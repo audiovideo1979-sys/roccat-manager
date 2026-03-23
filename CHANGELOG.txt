@@ -1,0 +1,15 @@
+ROCCAT Manager Full — Changelog
+================================
+
+@1 — 2026-03-23
+  - Initial project registration in Projects Folder workflow
+  - Created CLAUDE.md, HANDOFF.md, CHANGELOG.txt
+  - Core app already complete from prior build session (Sasha/claude.ai):
+    - Flask backend + full REST API (port 5555)
+    - Dark-themed SPA frontend (index.html)
+    - Boot 1 profiles fully configured (5 profiles)
+    - Binary .dat format reverse-engineered (SWARM_II_DAT_FORMAT.py, profile_mgr_format.py)
+    - .dat export/import to SWARM II onboard file
+    - Launcher scripts (INSTALL_AND_RUN.bat, Launch.bat)
+    - pywinauto automation stubs (needs calibration)
+    - HID protocol experiments (root hid_*.py, not integrated)

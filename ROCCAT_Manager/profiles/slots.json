@@ -1,0 +1,16 @@
+{
+  "boot1": [
+    "main-test",
+    "default-03",
+    "grounded",
+    "wwm",
+    "default-05"
+  ],
+  "boot2": [
+    null,
+    null,
+    null,
+    null,
+    null
+  ]
+}
