@@ -9,8 +9,8 @@
 - **Web app:** `ROCCAT_Manager/server.py` (Flask, port 5555) + SPA frontend in `ROCCAT_Manager/templates/`
 - **Run server:** `ROCCAT_Manager/Launch.bat` or `python ROCCAT_Manager/server.py`
 - **Working directory:** `C:\Projects Folder\ROCCAT_Manager_Full\`
-- **Git:** Currently inside the Consumables monorepo (`C:\Projects Folder\` remote). Needs its own GitHub repo.
-- **Push:** `cd "C:\Projects Folder" && git add -A && git commit -m "..." && git push`
+- **Git:** Own repo — `https://github.com/audiovideo1979-sys/roccat-manager`
+- **Push:** `cd "C:\Projects Folder\ROCCAT_Manager_Full" && git add -A && git commit -m "..." && git push`
 
 ## Rules
 - **Always update CHANGELOG.txt** after every change with the next @N version number
