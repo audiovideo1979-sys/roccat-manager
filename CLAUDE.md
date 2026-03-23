@@ -48,7 +48,24 @@
 | `GET` | `/api/export-all/{boot_id}` | Download all profiles as .zip |
 | `POST` | `/api/import-to-mouse/{boot_id}` | Write profiles to SWARM II onboard file |
 
-## ⚠️ Automation Calibration — Top Priority
+## HID Protocol Research (WIP)
+Direct HID bypass to avoid SWARM II entirely — **not working yet**, needs USB capture from Boot 2.
+
+**Key findings:**
+- Dongle (PID 0x5017) is the command gateway, NOT the mouse
+- Mouse IF=1 (UP=0xFF00) is the write channel (accepts output reports)
+- SWARM II cycles through all 5 profiles for LED animation via dongle report 0x06
+- Kone Pro (same generation) uses SET_REPORT control transfers with 69-byte settings blob
+- All standard write methods tried (hidapi, pyusb, ctypes) update report cache but don't change actual mouse behavior
+- **Next step:** USB packet capture on Boot 2 to see exact write protocol
+
+**Useful tools (root directory):**
+- `hid_spy.py` — Real-time HID report monitor (run while changing settings in SWARM II)
+- `hid_brute_write.py` — Tests every write method on every interface
+- `hid_dongle_write.py` — Dongle-specific write test
+- `ctypes_hid_write.py` — Direct Windows HID API test
+
+## Automation Calibration (Alternative Approach)
 `roccat_automation.py` has placeholder control names that need to be mapped to actual SWARM II UI controls:
 1. Install deps: `pip install pywinauto pywin32`
 2. Open SWARM II, navigate to Kone XP Air main screen

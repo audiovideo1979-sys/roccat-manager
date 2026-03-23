@@ -3,3 +3,6 @@ __pycache__/
 *.pyo
 .env
 *.log
+test_cap_*.pcap
+swarm_capture.pcap
+usb_trace.*

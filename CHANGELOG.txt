@@ -1,10 +1,22 @@
 ROCCAT Manager Full — Changelog
 ================================
 
+@2 — 2026-03-23
+  - HID protocol reverse-engineering session (Boot 1)
+  - Built hid_spy.py: real-time HID report monitor
+  - Discovered dongle (PID 0x5017) is the command gateway to mouse
+  - Mapped mouse report layout: 0x01=DPI+LED, 0x02=buttons, 0x03-05=LEDs, 0x06/08=DPI stages
+  - Confirmed mouse IF=1 (0xFF00) as write channel
+  - Tested every write method (hidapi, pyusb, ctypes, frida) — none change actual DPI
+  - Researched Kone Pro protocol (same generation): SET_REPORT control transfers, 69-byte settings
+  - Installed Wireshark 4.6.4, frida for future capture work
+  - Conclusion: need USB packet capture from Boot 2 to decode write protocol
+  - Added capture/probe tools: hid_spy, hid_dongle_write, hid_brute_write, ctypes_hid_write, etc.
+
 @1 — 2026-03-23
   - Initial project registration in Projects Folder workflow
   - Created CLAUDE.md, HANDOFF.md, CHANGELOG.txt
-  - Core app already complete from prior build session (Sasha/claude.ai):
+  - Core app already complete from prior build session (Boot 2/claude.ai):
     - Flask backend + full REST API (port 5555)
     - Dark-themed SPA frontend (index.html)
     - Boot 1 profiles fully configured (5 profiles)
