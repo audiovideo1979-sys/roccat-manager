@@ -340,6 +340,159 @@ def import_to_mouse(boot_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ── Routes — Live Swarm II INI Profiles ──────────────────────────────────────
+@app.route("/api/swarm/profiles", methods=["GET"])
+def get_swarm_profiles():
+    """Read live profile data from Swarm II's INI file."""
+    try:
+        from swarm_ini import read_profiles_from_ini
+        profiles = read_profiles_from_ini()
+        return jsonify({"success": True, "profiles": profiles})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/swarm/dpi/<int:profile_idx>", methods=["PUT"])
+def set_swarm_dpi(profile_idx):
+    """Write DPI values to Swarm II INI for a specific profile."""
+    try:
+        from swarm_ini import write_dpi_to_ini
+        body = request.get_json()
+        dpi_values = body.get("dpi_values", [])
+        if len(dpi_values) != 5:
+            return jsonify({"error": "Need exactly 5 DPI values"}), 400
+        write_dpi_to_ini(profile_idx, dpi_values)
+        return jsonify({"success": True, "message": f"DPI updated for profile {profile_idx}. Restart Swarm II without dongle to apply."})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/swarm/sync", methods=["POST"])
+def sync_from_swarm():
+    """Import current Swarm II profiles into ROCCAT Manager's stored profiles."""
+    try:
+        from swarm_ini import read_profiles_from_ini
+
+        ini_profiles = read_profiles_from_ini()
+        profiles = load_stored()
+
+        # Translate Swarm II internal names to our UI names
+        NAME_MAP = {
+            'Click': 'Left Click',
+            'Menu': 'Right Click',
+            'Universal Scroll': 'Middle Click',
+            'Browser Forward': 'Browser Forward',
+            'Browser Backward': 'Browser Back',
+            'Scroll Up': 'Scroll Up',
+            'Scroll Down': 'Scroll Down',
+            'Tilt Left': 'Tilt Left',
+            'Tilt Right': 'Tilt Right',
+            'Double-Click': 'Double-Click',
+            'DPI Up': 'DPI Up',
+            'DPI Down': 'DPI Down',
+            'DPI Cycle Up': 'DPI Cycle Up',
+            'DPI Cycle Down': 'DPI Cycle Down',
+            'Easy Shift': 'Easy Shift',
+            'Disabled': 'Disabled',
+            'Insert': 'Insert',
+            'Delete': 'Delete',
+            'Home': 'Home',
+            'End': 'End',
+            'Page Up': 'Page Up',
+            'Page Down': 'Page Down',
+        }
+
+        def translate_name(entry):
+            """Convert an INI button entry to a UI-friendly name."""
+            name = entry['name']
+            if entry['type'] == 'keyboard':
+                return f"Hotkey {name}"
+            if entry['type'] == 'disabled' or name == 'Disabled':
+                return 'Disabled'
+            if entry['type'] in ('easyshift_func', 'profile', 'raw'):
+                return 'Disabled'  # entries we can't map yet
+            if name == 'Standard(0x61)':
+                return 'Tilt Left'
+            if name == 'Standard(0x62)':
+                return 'Tilt Right'
+            if name.startswith('Standard(') or name.startswith('Scroll(') or name.startswith('Profile('):
+                return 'Disabled'  # unknown codes
+            if name.startswith('ES(0x61)'):
+                return 'Prev Track'
+            if name.startswith('ES(0x62)'):
+                return 'Next Track'
+            if name.startswith('ES(0x04)'):
+                return 'Disabled'
+            if name.startswith('ES('):
+                return 'Disabled'
+            return NAME_MAP.get(name, name)
+
+        # Swarm II profile names (hardcoded order for now)
+        swarm_names = ["WWM", "Main Test", "Grounded", "Default Profile 03", "Default Profile 05"]
+
+        for i, ip in enumerate(ini_profiles):
+            if 'dpi' not in ip or 'dpi_x' not in ip.get('dpi', {}):
+                continue
+
+            name = swarm_names[i] if i < len(swarm_names) else f"Profile {i+1}"
+            dpi = ip['dpi']['dpi_x'][ip['dpi'].get('active_dpi_stage', 0)] if ip['dpi']['dpi_x'] else 800
+
+            keybinds = dict(DEFAULT_KEYBINDS)
+            easy_shift = dict(DEFAULT_EASYSHIFT)
+
+            if 'buttons' in ip:
+                entries = ip['buttons']['entries']
+
+                # Primary layer button slot mapping (entry index -> button name)
+                # Order confirmed by cross-referencing Swarm II button assignments
+                btn_map = [
+                    'left_button', 'right_button', 'middle_button',  # 0-2: buttons 1-3
+                    'scroll_up', 'scroll_down',                       # 3-4: buttons 4-5
+                    'side_button_1', 'side_button_2',                 # 5-6: buttons 10-11
+                    'dpi_up', 'dpi_down',                             # 7-8: buttons 8-9
+                    'thumb_button_1', 'thumb_button_2',               # 9-10: buttons 12-13
+                    'tilt_left', 'tilt_right',                        # 11-12: buttons 6-7 (0x61/0x62 = default)
+                    'easy_shift', None,                               # 13-14: button 14, profile switch
+                ]
+
+                # Easy Shift layer button slot mapping (starting at entry 15)
+                es_btn_map = [
+                    'left_button', 'right_button',
+                    'middle_button',
+                    'tilt_left', 'tilt_right',
+                    'side_button_1', 'side_button_2',
+                    'dpi_up', 'dpi_down',
+                    'thumb_button_1', 'thumb_button_2',
+                    'scroll_up', 'scroll_down',
+                ]
+
+                for j, entry in enumerate(entries):
+                    translated = translate_name(entry)
+                    if j < len(btn_map) and btn_map[j]:
+                        keybinds[btn_map[j]] = translated
+                    elif j >= 15 and j - 15 < len(es_btn_map) and es_btn_map[j - 15]:
+                        easy_shift[es_btn_map[j - 15]] = translated
+
+            # Find or create profile
+            existing = next((p for p in profiles if p.get('name') == name), None)
+            if existing:
+                existing['dpi'] = dpi
+                existing['keybinds'] = keybinds
+                existing['easy_shift'] = easy_shift
+            else:
+                profiles.append({
+                    'id': make_id(name),
+                    'name': name,
+                    'color': '#888780',
+                    'dpi': dpi,
+                    'keybinds': keybinds,
+                    'easy_shift': easy_shift,
+                })
+
+        save_stored(profiles)
+        return jsonify({"success": True, "message": f"Synced {len(ini_profiles)} profiles from Swarm II"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 def restart_swarm():
     """Kill and restart SWARM II."""
     import subprocess

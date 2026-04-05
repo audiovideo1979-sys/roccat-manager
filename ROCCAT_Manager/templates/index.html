@@ -642,6 +642,7 @@
     <div class="profile-nav" id="stored-list-sidebar"></div>
 
     <div class="sidebar-footer">
+      <button class="export-all-btn" onclick="syncFromSwarm()" style="background:var(--accent-dim);border-color:var(--accent);color:var(--accent-txt);margin-bottom:6px;">Sync from Swarm II</button>
       <button class="export-all-btn" onclick="importToMouse()" style="background:var(--green-dim);border-color:var(--green);color:var(--green-txt);">Import to Mouse</button>
     </div>
   </aside>
@@ -1262,6 +1263,27 @@ function exportProfile(profileId) {
 
 function exportAll() {
   window.location.href = `/api/export-all/${currentBoot}`;
+}
+
+async function syncFromSwarm() {
+  if (!confirm('Sync profiles from Swarm II? This will update stored profiles with live data from Swarm II.')) return;
+  setStatus('Syncing from Swarm II...');
+  toast('Syncing...');
+  try {
+    const res = await fetch('/api/swarm/sync', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+    const data = await res.json();
+    if (data.success) {
+      toast(data.message || 'Synced!', 'success');
+      setStatus('Synced from Swarm II');
+      await loadAll();
+    } else {
+      toast(data.error || 'Sync failed', 'error');
+      setStatus('Sync failed');
+    }
+  } catch (e) {
+    toast('Sync failed: ' + e.message, 'error');
+    setStatus('Sync failed');
+  }
 }
 
 async function importToMouse() {
