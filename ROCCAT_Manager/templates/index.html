@@ -1287,22 +1287,32 @@ async function syncFromSwarm() {
 }
 
 async function importToMouse() {
-  if (!confirm('This will write all 5 active slot profiles to the mouse and restart SWARM II. Continue?')) return;
-  setStatus('Writing profiles to mouse...');
-  toast('Importing to mouse...');
+  if (!selectedProfileId) { toast('Select a profile first', 'error'); return; }
+  const profile = storedProfiles.find(p => p.id === selectedProfileId);
+  if (!profile) { toast('Profile not found', 'error'); return; }
+
+  if (!confirm(`Write "${profile.name}" (DPI ${profile.dpi}) directly to the mouse?\n\nThis will briefly restart Swarm II.`)) return;
+
+  setStatus('Writing to mouse...');
+  toast('Writing profile to mouse...', 'info');
+
   try {
-    const res = await fetch(`/api/import-to-mouse/${currentBoot}`, { method: 'POST' });
+    const res = await fetch('/api/import-to-mouse', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ profile_id: selectedProfileId, profile_idx: 0 })
+    });
     const data = await res.json();
     if (data.success) {
-      toast(data.message || 'Imported to mouse!', 'success');
-      setStatus('Imported to mouse');
+      toast(data.message || 'Written to mouse!', 'success');
+      setStatus('Profile written to mouse');
     } else {
-      toast(data.error || 'Import failed', 'error');
-      setStatus('Import failed');
+      toast(data.error || 'Write failed', 'error');
+      setStatus('Write failed');
     }
   } catch (e) {
-    toast('Import failed: ' + e.message, 'error');
-    setStatus('Import failed');
+    toast('Write failed: ' + e.message, 'error');
+    setStatus('Write failed');
   }
 }
 

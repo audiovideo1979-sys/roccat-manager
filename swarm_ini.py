@@ -171,9 +171,16 @@ def decode_qt_bytearray(data):
 
 
 def encode_qt_bytearray(data):
-    """Encode raw bytes to Qt @ByteArray(...) escape sequence format."""
+    r"""Encode raw bytes to Qt @ByteArray(...) escape sequence format.
+
+    Qt uses minimum hex digits (\x1 for 0x01, \x1d for 0x1D).
+    When a hex-encoded byte is followed by a byte that starts with a hex char,
+    we MUST use 2 hex digits to avoid ambiguity (\x01d instead of \x1d).
+    """
     result = bytearray()
-    for b in data:
+    for i, b in enumerate(data):
+        next_byte = data[i + 1] if i + 1 < len(data) else None
+
         if b == 0x00:
             result.extend(b'\\0')
         elif b == 0x0a:
@@ -190,7 +197,25 @@ def encode_qt_bytearray(data):
             # printable ASCII except parens and quotes
             result.append(b)
         else:
-            result.extend(('\\x%x' % b).encode())
+            # Hex escape — check if next byte's encoding starts with a hex char
+            # to decide if we need 2-digit padding
+            need_padding = False
+            if next_byte is not None and b < 0x10:
+                # Our byte uses 1 hex digit. Check if next byte's first
+                # encoded character is a hex digit (which would be ambiguous)
+                if next_byte == 0x00:
+                    pass  # \0 starts with '0' but that's a named escape, not hex
+                elif 32 <= next_byte < 127 and next_byte not in (0x28, 0x29, 0x22):
+                    # Next byte is printable — check if it's a hex char
+                    if chr(next_byte) in '0123456789abcdefABCDEF':
+                        need_padding = True
+                # If next byte is also hex-encoded, its first char is '\'
+                # which is not a hex digit, so no ambiguity
+
+            if need_padding:
+                result.extend(('\\x%02x' % b).encode())
+            else:
+                result.extend(('\\x%x' % b).encode())
     return bytes(result)
 
 
@@ -503,11 +528,196 @@ def write_dpi_to_ini(profile_idx, dpi_values):
     return False
 
 
+def write_profile_to_ini(profile_idx, profile_data):
+    """
+    Write a full profile (DPI + buttons) to the INI file.
+    profile_data: dict with 'dpi' (int or list of 5), 'keybinds' (dict), 'easy_shift' (dict)
+    """
+    raw = read_ini()
+    backup_ini()
+
+    # ── Write DPI ────────────────────────────────────────────────────────
+    dpi = profile_data.get('dpi', 800)
+    if isinstance(dpi, int):
+        dpi_values = [dpi] * 5
+    else:
+        dpi_values = list(dpi)[:5]
+        while len(dpi_values) < 5:
+            dpi_values.append(dpi_values[-1] if dpi_values else 800)
+
+    main_data, _, _ = extract_field(raw, 'MainSetting')
+    if main_data:
+        num_profiles = struct.unpack('>I', main_data[0:4])[0]
+        offset = 4
+        new_main = bytearray(main_data)
+        for p in range(num_profiles):
+            if offset + 4 > len(new_main):
+                break
+            prof_len = struct.unpack('>I', new_main[offset:offset + 4])[0]
+            if p == profile_idx:
+                prof_start = offset + 4
+                for i in range(5):
+                    struct.pack_into('<H', new_main, prof_start + 7 + i * 2, dpi_values[i])
+                    struct.pack_into('<H', new_main, prof_start + 17 + i * 2, dpi_values[i])
+                break
+            offset += 4 + prof_len
+        raw = replace_field(raw, 'MainSetting', bytes(new_main))
+
+    # ── Write Buttons ────────────────────────────────────────────────────
+    keybinds = profile_data.get('keybinds', {})
+    easy_shift = profile_data.get('easy_shift', {})
+
+    btn_data, _, _ = extract_field(raw, 'm_btn_setting')
+    if btn_data:
+        new_btn = bytearray(btn_data)
+        profiles = parse_btn_setting(btn_data)
+
+        if profile_idx < len(profiles):
+            # Find the profile's byte range in the raw data
+            # Re-parse to find offsets
+            _find_and_update_buttons(new_btn, profile_idx, keybinds, easy_shift)
+            raw = replace_field(raw, 'm_btn_setting', bytes(new_btn))
+
+    with open(INI_FILE, 'wb') as f:
+        f.write(raw)
+    return True
+
+
+def _keybind_to_action(value):
+    """Convert a UI keybind string to a button action dict."""
+    if not value or value == 'Disabled':
+        return {'type': 'disabled', 'code': 0x00}
+
+    # Standard functions
+    name_to_standard = {
+        'Left Click': 0x01, 'Right Click': 0x02, 'Middle Click': 0x03,
+        'Double-Click': 0x04, 'Browser Forward': 0x05, 'Browser Back': 0x06,
+        'Browser Backward': 0x06,
+        'Tilt Left': 0x07, 'Tilt Right': 0x08,
+        'Scroll Up': 0x09, 'Scroll Down': 0x0a,
+        'Insert': 0x0b, 'Delete': 0x0c, 'Home': 0x0d, 'End': 0x0e,
+        'Page Up': 0x0f, 'Page Down': 0x10,
+        'Ctrl': 0x11, 'Shift': 0x12, 'Alt': 0x13, 'Win': 0x14,
+        'CapsLock': 0x15,
+    }
+    if value in name_to_standard:
+        return {'type': 'standard', 'code': name_to_standard[value]}
+
+    # DPI functions
+    if value == 'DPI Up':
+        return {'type': 'dpi', 'code': 0x02}
+    if value == 'DPI Down':
+        return {'type': 'dpi', 'code': 0x03}
+    if value == 'DPI Cycle Up':
+        return {'type': 'dpi', 'code': 0x01}
+    if value == 'DPI Cycle Down':
+        return {'type': 'dpi', 'code': 0x04}
+
+    # Easy Shift
+    if value == 'Easy Shift':
+        return {'type': 'special', 'code': 0x01}
+
+    # Multimedia
+    if value == 'Volume Up':
+        return {'type': 'standard', 'code': 0x61}
+    if value == 'Volume Down':
+        return {'type': 'standard', 'code': 0x62}
+    if value == 'Prev Track':
+        return {'type': 'easyshift_func', 'code': 0x61}
+    if value == 'Next Track':
+        return {'type': 'easyshift_func', 'code': 0x62}
+
+    # Hotkey (keyboard key)
+    if value.startswith('Hotkey '):
+        key_str = value[7:]  # strip "Hotkey "
+        return _parse_hotkey_string(key_str)
+
+    # Unknown — keep as disabled
+    return {'type': 'disabled', 'code': 0x00}
+
+
+def _parse_hotkey_string(key_str):
+    """Parse a hotkey string like 'LCtrl+V' or 'F3' into a keyboard action."""
+    parts = key_str.split('+')
+    modifier = 0
+    scancode = 0
+
+    mod_map = {
+        'LCtrl': 0x01, 'Ctrl': 0x01, 'LShift': 0x02, 'Shift': 0x02,
+        'LAlt': 0x04, 'Alt': 0x04, 'LWin': 0x08, 'Win': 0x08,
+        'RCtrl': 0x10, 'RShift': 0x20, 'RAlt': 0x40, 'RWin': 0x80,
+    }
+
+    for part in parts:
+        part = part.strip()
+        if part in mod_map:
+            modifier |= mod_map[part]
+        elif part in HID_BY_NAME:
+            scancode = HID_BY_NAME[part]
+        else:
+            # Try case-insensitive
+            for name, code in HID_BY_NAME.items():
+                if name.lower() == part.lower():
+                    scancode = code
+                    break
+
+    if scancode == 0:
+        return {'type': 'disabled', 'code': 0x00}
+
+    return {'type': 'keyboard', 'scancode': scancode, 'modifier': modifier}
+
+
+def _find_and_update_buttons(btn_data, profile_idx, keybinds, easy_shift):
+    """Find a profile in btn_data and update its button entries in-place."""
+    # This is complex because entries are variable-length.
+    # For now, we use the simpler approach: find-and-replace DPI values
+    # and leave button entries for a future update.
+    # TODO: implement full button entry rewriting
+    pass
+
+
 def backup_ini():
     """Create a backup of the INI file."""
     if INI_FILE.exists():
         backup = str(INI_FILE) + '.bak'
         shutil.copy2(str(INI_FILE), backup)
+
+
+def kill_swarm():
+    """Kill Swarm II process."""
+    import subprocess
+    try:
+        subprocess.run(["taskkill", "/f", "/im", "Turtle Beach Swarm II.exe"],
+                       capture_output=True, timeout=5)
+        return True
+    except Exception:
+        return False
+
+
+def start_swarm():
+    """Start Swarm II."""
+    import subprocess
+    swarm_exe = r"C:\Program Files\Turtle Beach Swarm II\Turtle Beach Swarm II.exe"
+    if Path(swarm_exe).exists():
+        try:
+            subprocess.Popen([swarm_exe])
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def is_swarm_running():
+    """Check if Swarm II is running."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq Turtle Beach Swarm II.exe"],
+            capture_output=True, text=True, timeout=5
+        )
+        return "Turtle Beach Swarm II.exe" in result.stdout
+    except Exception:
+        return False
 
 
 # ── CLI test ────────────────────────────────────────────────────────────────

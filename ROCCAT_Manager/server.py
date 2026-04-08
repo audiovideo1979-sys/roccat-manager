@@ -238,102 +238,31 @@ def export_all_dat(boot_id):
 SWARM_SETTING_DIR = Path(os.environ.get("APPDATA", "")) / "Turtle Beach" / "Swarm II" / "Setting"
 ONBOARD_FILE = SWARM_SETTING_DIR / "KONE_XP_AIR_Profile_Mgr.dat"
 
-@app.route("/api/import-to-mouse/<boot_id>", methods=["POST"])
-def import_to_mouse(boot_id):
-    """Write all 5 active slot profiles directly to SWARM II's onboard profile file and restart SWARM."""
-    slots = load_slots()
-    boot_slots = slots.get(boot_id, [None]*5)
-    stored = load_stored()
-    prof_map = {p["id"]: p for p in stored}
-
-    if not ONBOARD_FILE.exists():
-        return jsonify({"success": False, "error": "SWARM II profile file not found. Is SWARM II installed?"}), 404
-
-    sys.path.insert(0, str(BASE_DIR))
-    from profile_mgr_format import (
-        parse_profile_mgr, write_profile_mgr_to_file, create_minimal_profile,
-        fix_trailing_bytes, _make_data_content, _encode_utf16be,
-        _make_simple_content, _make_profile_color_content, make_default_main_data
-    )
-    from dat_export import profile_to_dat_args, action_to_entry, KEYBIND_TO_SLOT
-
-    def build_custom_buttons_data(profile):
-        """Build 129-byte KoneXPAirButtons from our JSON profile."""
-        args = profile_to_dat_args(profile)
-        button_assignments = args['button_assignments']
-        data = b'\x00\x00\x00'  # Padding
-        data += b'\x7D\x07\x7D'  # Identifier
-        data += b'\x01'  # Modified flag
-        for entry in button_assignments:
-            data += bytes(entry)
-        data += b'\x00\x00'  # Checksum (SWARM recalculates)
-        return data
-
-    def build_custom_main_data(profile):
-        """Build 82-byte KoneXPAirMain from our JSON profile."""
-        dpi = profile.get('dpi', 800)
-        color_hex = profile.get('color', '#888780').lstrip('#')
-        r = int(color_hex[0:2], 16)
-        g = int(color_hex[2:4], 16)
-        b = int(color_hex[4:6], 16)
-        return make_default_main_data(
-            dpi_stages=[dpi, dpi, dpi, dpi, dpi],
-            color_rgb=(r, g, b)
-        )
-
-    def build_profile_for_mgr(profile):
-        """Build a profile dict compatible with profile_mgr_format."""
-        color_hex = profile.get('color', '#888780').lstrip('#')
-        r = int(color_hex[0:2], 16)
-        g = int(color_hex[2:4], 16)
-        b_val = int(color_hex[4:6], 16)
-        blocks = [
-            {'name': 'DesktopProfile', 'raw_content': _make_simple_content(0)},
-            {'name': 'KoneXPAirButtons', 'raw_content': _make_data_content(0x0C, build_custom_buttons_data(profile))},
-            {'name': 'KoneXPAirMain', 'raw_content': _make_data_content(0x0C, build_custom_main_data(profile))},
-            {'name': 'ProfileColor', 'raw_content': _make_profile_color_content(r, g, b_val)},
-            {'name': 'ProfileImage', 'raw_content': _make_data_content(0x0A,
-                _encode_utf16be(":/icons/resource/graphic/icons/Basics/profile_icons/profile_default_icon.png"))},
-            {'name': 'ProfileName', 'raw_content': _make_data_content(0x0A, _encode_utf16be(profile.get('name', 'Profile')))},
-        ]
-        return {'block_count': len(blocks), 'blocks': blocks}
-
+@app.route("/api/import-to-mouse", methods=["POST"])
+def import_to_mouse():
+    """
+    Write profile DPI directly to mouse hardware via KONE_XP_AIR.dll.
+    One-click operation — kills Swarm, writes, restarts Swarm.
+    """
     try:
-        # Parse existing onboard file
-        mgr = parse_profile_mgr(str(ONBOARD_FILE))
+        from direct_write import write_dpi_direct
 
-        # Build new profiles list
-        new_profiles = []
-        for i, pid in enumerate(boot_slots):
-            if pid and pid in prof_map:
-                new_profiles.append(build_profile_for_mgr(prof_map[pid]))
-            elif i < len(mgr.get('profiles', [])):
-                # Keep existing profile if no replacement
-                new_profiles.append(mgr['profiles'][i])
-            else:
-                # Create empty default
-                new_profiles.append(create_minimal_profile(name=f"Profile {i+1}"))
+        body = request.get_json() or {}
+        profile_id = body.get("profile_id")
+        profile_idx = body.get("profile_idx", 0)
 
-        # Replace profiles in manager
-        mgr['profiles'] = new_profiles
-        mgr['profile_count'] = len(new_profiles)
-        fix_trailing_bytes(mgr)
+        profiles = load_stored()
+        profile = next((p for p in profiles if p["id"] == profile_id), None)
+        if not profile:
+            return jsonify({"success": False, "error": "Profile not found"}), 404
 
-        # Backup original
-        import shutil
-        backup = str(ONBOARD_FILE) + '.bak'
-        shutil.copy2(str(ONBOARD_FILE), backup)
-
-        # Write new file
-        write_profile_mgr_to_file(mgr, str(ONBOARD_FILE))
-
-        # Restart SWARM II
-        restart_msg = restart_swarm()
+        dpi = profile.get('dpi', 800)
+        result = write_dpi_direct(dpi, profile_idx)
 
         return jsonify({
-            "success": True,
-            "message": f"Wrote {len(new_profiles)} profiles to mouse. {restart_msg}",
-            "backup": backup
+            "success": result["success"],
+            "message": result.get("message", ""),
+            "error": result.get("error", ""),
         })
 
     except Exception as e:
