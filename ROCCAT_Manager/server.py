@@ -241,15 +241,13 @@ ONBOARD_FILE = SWARM_SETTING_DIR / "KONE_XP_AIR_Profile_Mgr.dat"
 @app.route("/api/import-to-mouse", methods=["POST"])
 def import_to_mouse():
     """
-    Write profile DPI directly to mouse hardware via KONE_XP_AIR.dll.
-    One-click operation — kills Swarm, writes, restarts Swarm.
+    Write profile DPI directly to mouse hardware via roccat_write.py subprocess.
     """
     try:
-        from direct_write import write_dpi_direct
+        import subprocess as sp
 
         body = request.get_json() or {}
         profile_id = body.get("profile_id")
-        profile_idx = body.get("profile_idx", 0)
 
         profiles = load_stored()
         profile = next((p for p in profiles if p["id"] == profile_id), None)
@@ -257,13 +255,24 @@ def import_to_mouse():
             return jsonify({"success": False, "error": "Profile not found"}), 404
 
         dpi = profile.get('dpi', 800)
-        result = write_dpi_direct(dpi, profile_idx)
 
-        return jsonify({
-            "success": result["success"],
-            "message": result.get("message", ""),
-            "error": result.get("error", ""),
-        })
+        # Run roccat_write.py as a separate process (this works reliably)
+        script = str(Path(r"C:\Claude Folder\roccat_write.py"))
+        result = sp.run(
+            ["python", script, str(dpi)],
+            capture_output=True, text=True, timeout=30
+        )
+
+        if result.returncode == 0:
+            return jsonify({
+                "success": True,
+                "message": f"DPI set to {dpi} on the mouse!",
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.stderr or result.stdout or "Write failed",
+            })
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -401,9 +410,9 @@ def sync_from_swarm():
                         easy_shift[es_btn_map[j - 15]] = translated
 
             # Find or create profile
+            # Only sync button mappings — don't overwrite DPI (user sets that in our UI)
             existing = next((p for p in profiles if p.get('name') == name), None)
             if existing:
-                existing['dpi'] = dpi
                 existing['keybinds'] = keybinds
                 existing['easy_shift'] = easy_shift
             else:

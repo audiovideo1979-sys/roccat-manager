@@ -108,10 +108,11 @@ def write_profile(dev, profile_data):
     print('Profile written!')
 
 
-def build_profile(dpi_values, polling_rate=0x1f):
+def build_profile(dpi_values, profile_slot=0, polling_rate=0x1f):
     """
     Build a 75-byte profile data block.
     dpi_values: list of 5 DPI values (int, actual DPI like 400, 800, etc.)
+    profile_slot: onboard profile slot (0-4)
     polling_rate: 0x1f=default, 0x0a=1000Hz
     """
     p = bytearray(75)
@@ -119,7 +120,7 @@ def build_profile(dpi_values, polling_rate=0x1f):
     # Header
     p[0] = 0x06       # Report ID
     p[1] = 0x4E       # Profile data length marker
-    p[2] = 0x01       # Profile slot (01 = first onboard slot)
+    p[2] = profile_slot  # Profile slot (0-4)
     p[3] = 0x06       # Unknown
     p[4] = 0x06       # Unknown
     p[5] = polling_rate
@@ -204,18 +205,17 @@ def main():
 
     print(f'Device opened: {dev}\n')
 
-    # Build and write profile
+    # Write to ALL 5 profile slots
     dpi_values = [target_dpi] * 5
-    profile = build_profile(dpi_values)
-    write_profile(dev, profile)
+    for slot in range(5):
+        profile = build_profile(dpi_values, profile_slot=slot)
+        write_profile(dev, profile)
+        time.sleep(0.1)
+        print(f'  Slot {slot} written')
 
     dll.hid_close(dev)
 
-    # Restart Swarm II
-    print('\nRestarting Swarm II...')
-    subprocess.Popen([os.path.join(SWARM_DIR, 'Turtle Beach Device Service.exe')])
-    time.sleep(2)
-    subprocess.Popen([os.path.join(SWARM_DIR, 'Turtle Beach Swarm II.exe')])
+    # Don't restart Swarm II — it would overwrite our values
 
     print(f'\nDone! Mouse should now be at {target_dpi} DPI.')
     print('Check if the mouse speed changed!')
