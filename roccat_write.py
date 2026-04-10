@@ -108,6 +108,238 @@ def write_profile(dev, profile_data):
     print('Profile written!')
 
 
+def write_buttons(dev, button_data):
+    """
+    Write button mappings to the mouse using command 0x47.
+    button_data: 125 bytes (5 pages of 25 bytes)
+    Protocol captured from Swarm II via Frida.
+    """
+    pages = [button_data[i * 25:(i + 1) * 25] for i in range(5)]
+    checksum = sum(button_data) & 0xFFFF
+
+    print(f'Writing buttons ({len(button_data)} bytes, checksum=0x{checksum:04x})')
+
+    for pg in range(5):
+        # SELECT PAGE: 06 01 47 06 02 [page] 00
+        send(dev, [0x06, 0x01, 0x47, 0x06, 0x02, pg, 0x00], f'Btn select page {pg}')
+        time.sleep(0.05)
+        handshake(dev)
+
+        # WRITE PAGE: 06 01 47 06 19 [25 bytes]
+        page_cmd = [0x06, 0x01, 0x47, 0x06, 0x19] + list(pages[pg])
+        send(dev, page_cmd, f'Btn write page {pg}')
+        time.sleep(0.05)
+        handshake(dev)
+
+    # COMMIT: 06 01 49 06 03 [num_profiles] [checksum_lo] [checksum_hi]
+    cs_lo = checksum & 0xFF
+    cs_hi = (checksum >> 8) & 0xFF
+    send(dev, [0x06, 0x01, 0x49, 0x06, 0x03, 0x05, cs_lo, cs_hi], 'Btn commit')
+    time.sleep(0.05)
+    handshake(dev)
+
+    print('Buttons written!')
+
+
+def build_button_data(keybinds, easy_shift, profile_slot=0):
+    """
+    Build 125-byte button data from keybind assignments.
+    keybinds: dict of button_name -> action_string
+    easy_shift: dict of button_name -> action_string
+    """
+    # HID scancodes for keyboard keys
+    HID_KEYS = {
+        'A': 0x04, 'B': 0x05, 'C': 0x06, 'D': 0x07, 'E': 0x08, 'F': 0x09,
+        'G': 0x0A, 'H': 0x0B, 'I': 0x0C, 'J': 0x0D, 'K': 0x0E, 'L': 0x0F,
+        'M': 0x10, 'N': 0x11, 'O': 0x12, 'P': 0x13, 'Q': 0x14, 'R': 0x15,
+        'S': 0x16, 'T': 0x17, 'U': 0x18, 'V': 0x19, 'W': 0x1A, 'X': 0x1B,
+        'Y': 0x1C, 'Z': 0x1D,
+        '1': 0x1E, '2': 0x1F, '3': 0x20, '4': 0x21, '5': 0x22,
+        '6': 0x23, '7': 0x24, '8': 0x25, '9': 0x26, '0': 0x27,
+        'Enter': 0x28, 'Escape': 0x29, 'Backspace': 0x2A, 'Tab': 0x2B,
+        'Space': 0x2C, 'CapsLock': 0x39,
+        'F1': 0x3A, 'F2': 0x3B, 'F3': 0x3C, 'F4': 0x3D, 'F5': 0x3E, 'F6': 0x3F,
+        'F7': 0x40, 'F8': 0x41, 'F9': 0x42, 'F10': 0x43, 'F11': 0x44, 'F12': 0x45,
+        'Insert': 0x49, 'Home': 0x4A, 'PageUp': 0x4B, 'Delete': 0x4C,
+        'End': 0x4D, 'PageDown': 0x4E,
+        'Right': 0x4F, 'Left': 0x50, 'Down': 0x51, 'Up': 0x52,
+        'LCtrl': 0xE0, 'LShift': 0xE1, 'LAlt': 0xE2, 'LWin': 0xE3,
+        'RCtrl': 0xE4, 'RShift': 0xE5, 'RAlt': 0xE6, 'RWin': 0xE7,
+    }
+
+    MOD_MAP = {
+        'LCtrl': 0x01, 'Ctrl': 0x01, 'LShift': 0x02, 'Shift': 0x02,
+        'LAlt': 0x04, 'Alt': 0x04, 'LWin': 0x08, 'Win': 0x08,
+        'RCtrl': 0x10, 'RShift': 0x20, 'RAlt': 0x40, 'RWin': 0x80,
+    }
+
+    # Standard function codes
+    STD_CODES = {
+        'Left Click': 0x01, 'Click': 0x01,
+        'Right Click': 0x02, 'Menu': 0x02,
+        'Middle Click': 0x03, 'Universal Scroll': 0x03,
+        'Double-Click': 0x04,
+        'Browser Forward': 0x05, 'Browser Back': 0x06, 'Browser Backward': 0x06,
+        'Tilt Left': 0x07, 'Tilt Right': 0x08,
+        'Scroll Up': 0x09, 'Scroll Down': 0x0a,
+    }
+
+    def encode_action(action_str):
+        """Encode an action string to bytes."""
+        if not action_str or action_str == 'Disabled':
+            return b''
+
+        # Standard functions
+        if action_str in STD_CODES:
+            return bytes([STD_CODES[action_str], 0x01])
+
+        # DPI functions
+        if action_str == 'DPI Up':
+            return bytes([0x02, 0x02])
+        if action_str == 'DPI Down':
+            return bytes([0x03, 0x02])
+
+        # Easy Shift
+        if action_str == 'Easy Shift':
+            return bytes([0x01, 0x0a])
+
+        # Keyboard hotkey
+        if action_str.startswith('Hotkey '):
+            key_str = action_str[7:]
+            parts = key_str.split('+')
+            modifier = 0
+            scancode = 0
+            for part in parts:
+                part = part.strip()
+                if part in MOD_MAP:
+                    modifier |= MOD_MAP[part]
+                elif part in HID_KEYS:
+                    scancode = HID_KEYS[part]
+                elif part.upper() in HID_KEYS:
+                    scancode = HID_KEYS[part.upper()]
+            if scancode:
+                return bytes([scancode, modifier, 0x06, 0x00])
+
+        # Volume/multimedia
+        if action_str == 'Volume Up':
+            return bytes([0x07, 0x03])
+        if action_str == 'Volume Down':
+            return bytes([0x08, 0x03])
+        if action_str == 'Prev Track':
+            return bytes([0x07, 0x03])
+        if action_str == 'Next Track':
+            return bytes([0x08, 0x03])
+
+        return b''
+
+    # Button slot order (primary layer)
+    primary_order = [
+        'left_button', 'right_button', 'middle_button',
+        'scroll_up', 'scroll_down',
+        'side_button_1', 'side_button_2',
+        'dpi_up', 'dpi_down',
+        'thumb_button_1', 'thumb_button_2',
+        'tilt_left', 'tilt_right',
+        'easy_shift',
+    ]
+
+    # Easy Shift layer order
+    es_order = [
+        'left_button', 'right_button',
+        'middle_button',
+        'scroll_up', 'scroll_down',
+        'side_button_1', 'side_button_2',
+        'dpi_up', 'dpi_down',
+        'thumb_button_1', 'thumb_button_2',
+        'tilt_left', 'tilt_right',
+    ]
+
+    # Raw button data captured from Swarm II via Frida (second pass = original state)
+    # This is the EXACT data Swarm II writes, concatenated from 5 pages of 25 bytes
+    BUTTON_TEMPLATE = bytearray([
+        0x07, 0x7d, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x02, 0x01, 0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x09, 0x01, 0x00, 0x00, 0x0a, 0x01, 0x00, 0x13,
+        0x00, 0x06, 0x00, 0x41, 0x00, 0x06, 0x00, 0x00, 0x03, 0x01, 0x00, 0x06, 0x00, 0x06, 0x00, 0x25, 0x00, 0x06, 0x00, 0x00, 0x05, 0x01, 0x00, 0x00, 0x07,
+        0x01, 0x00, 0x00, 0x08, 0x01, 0x00, 0x00, 0x01, 0x0a, 0x00, 0x00, 0x01, 0x08, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x02, 0x01, 0x00, 0x00, 0x04, 0x03,
+        0x00, 0x00, 0x07, 0x03, 0x00, 0x00, 0x08, 0x03, 0x00, 0x4b, 0x00, 0x06, 0x00, 0x4e, 0x00, 0x06, 0x00, 0x19, 0x01, 0x06, 0x00, 0x06, 0x01, 0x06, 0x00,
+        0x4c, 0x00, 0x06, 0x00, 0x49, 0x00, 0x06, 0x00, 0x00, 0x02, 0x03, 0x00, 0x00, 0x03, 0x03, 0x00, 0x00, 0x01, 0x0a, 0x00, 0x00, 0x0b, 0x08, 0x24, 0x03,
+    ])
+
+    data = bytearray(BUTTON_TEMPLATE)
+    data[2] = profile_slot
+
+    # Entry offset map: (offset, entry_size)
+    # Offsets verified against raw Frida capture
+    ENTRY_OFFSETS = {
+        'left_button':    (5, 2),     # [01 01]
+        'right_button':   (9, 2),     # [02 01]
+        'middle_button':  (13, 2),    # [03 01]
+        'scroll_up':      (17, 2),    # [09 01]
+        'scroll_down':    (21, 2),    # [0a 01]
+        'side_button_1':  (24, 4),    # [13 00 06 00] keyboard P
+        'side_button_2':  (28, 4),    # [41 00 06 00] keyboard F8
+        'dpi_up':         (33, 2),    # [03 01] Middle Click
+        'dpi_down':       (36, 4),    # [06 00 06 00] keyboard C
+        'thumb_button_1': (40, 4),    # [25 00 06 00] keyboard 8
+        'thumb_button_2': (45, 2),    # [05 01] Browser Forward
+        'tilt_left':      (49, 2),    # [07 01] Tilt Left
+        'tilt_right':     (53, 2),    # [08 01] Tilt Right
+        'easy_shift':     (57, 2),    # [01 0a] Easy Shift
+    }
+
+    # Easy Shift layer offsets (verified from capture)
+    ES_ENTRY_OFFSETS = {
+        'left_button':    (65, 2),    # [01 01]
+        'right_button':   (69, 2),    # [02 01]
+        'side_button_1':  (84, 4),    # [4b 00 06 00] PageUp
+        'side_button_2':  (88, 4),    # [4e 00 06 00] PageDown
+        'dpi_up':         (92, 4),    # [19 01 06 00] LCtrl+V
+        'dpi_down':       (96, 4),    # [06 01 06 00] LCtrl+C
+        'thumb_button_1': (100, 4),   # [4c 00 06 00] Delete
+        'thumb_button_2': (104, 4),   # [49 00 06 00] Insert
+    }
+
+    # Override entries with user's keybinds
+    # NOTE: We only replace entries that match the template's size at that slot.
+    # If a 2-byte action replaces a 4-byte keyboard slot, we write the 2 bytes
+    # and zero out the remaining 2. Vice versa is not supported (would shift data).
+    for btn_name, (offset, slot_size) in ENTRY_OFFSETS.items():
+        action = keybinds.get(btn_name, '')
+        if not action:
+            continue
+        encoded = encode_action(action)
+        if not encoded:
+            continue
+        # Write the encoded bytes
+        for j in range(min(len(encoded), slot_size)):
+            if offset + j < len(data) - 2:
+                data[offset + j] = encoded[j]
+        # Zero remaining bytes if encoded is shorter than slot
+        for j in range(len(encoded), slot_size):
+            if offset + j < len(data) - 2:
+                data[offset + j] = 0x00
+
+    for btn_name, (offset, slot_size) in ES_ENTRY_OFFSETS.items():
+        action = easy_shift.get(btn_name, '')
+        if not action:
+            continue
+        encoded = encode_action(action)
+        if not encoded:
+            continue
+        for j in range(min(len(encoded), slot_size)):
+            if offset + j < len(data) - 2:
+                data[offset + j] = encoded[j]
+        for j in range(len(encoded), slot_size):
+            if offset + j < len(data) - 2:
+                data[offset + j] = 0x00
+
+    # Recompute checksum
+    cs = sum(data[:-2]) & 0xFFFF
+    data[-2] = cs & 0xFF
+    data[-1] = (cs >> 8) & 0xFF
+
+    return bytes(data)
+
+
 def switch_profile(dev, slot, num_profiles=5):
     """
     Switch the active profile on the mouse.
@@ -260,6 +492,14 @@ def main():
 
     target_dpi = int(sys.argv[1])
 
+    # Check for --buttons flag with JSON data
+    button_json = None
+    if '--buttons' in sys.argv:
+        idx = sys.argv.index('--buttons')
+        if idx + 1 < len(sys.argv):
+            import json
+            button_json = json.loads(sys.argv[idx + 1])
+
     print(f'=== ROCCAT Direct Write — Setting DPI to {target_dpi} ===\n')
 
     kill_swarm()
@@ -267,31 +507,34 @@ def main():
     if not dev:
         return
 
-    print(f'Dongle path: {path}')
-
-    # Initialize DLL's HIDAPI and open device
-    dll.hid_init()
-    dev = dll.hid_open_path(path)
-    if not dev:
-        print('Could not open device!')
-        return
-
-    print(f'Device opened: {dev}\n')
-
-    # Write to ALL 5 profile slots
+    # Write DPI to ALL 5 profile slots
     dpi_values = [target_dpi] * 5
     for slot in range(5):
         profile = build_profile(dpi_values, profile_slot=slot)
         write_profile(dev, profile)
         time.sleep(0.1)
-        print(f'  Slot {slot} written')
+        print(f'  DPI slot {slot} written')
+
+    # Write button mappings if provided
+    if button_json:
+        keybinds = button_json.get('keybinds', {})
+        easy_shift = button_json.get('easy_shift', {})
+        print(f'\nWriting button mappings...')
+        for slot in range(5):
+            btn_data = build_button_data(keybinds, easy_shift, profile_slot=slot)
+            write_buttons(dev, btn_data)
+            time.sleep(0.1)
+            print(f'  Button slot {slot} written')
 
     dll.hid_close(dev)
-
-    # Don't restart Swarm II — it would overwrite our values
+    try:
+        dll.hid_exit()
+    except:
+        pass
 
     print(f'\nDone! Mouse should now be at {target_dpi} DPI.')
-    print('Check if the mouse speed changed!')
+    if button_json:
+        print('Button mappings also updated.')
 
 
 if __name__ == '__main__':

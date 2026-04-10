@@ -255,11 +255,20 @@ def import_to_mouse():
             return jsonify({"success": False, "error": "Profile not found"}), 404
 
         dpi = profile.get('dpi', 800)
+        keybinds = profile.get('keybinds', {})
+        easy_shift = profile.get('easy_shift', {})
 
-        # Run roccat_write.py as a separate process (this works reliably)
+        # Write DPI and buttons via roccat_write.py subprocess
+        # Pass profile data as JSON argument
+        import json as jsonmod
         script = str(Path(r"C:\Claude Folder\roccat_write.py"))
+        profile_json = jsonmod.dumps({
+            'dpi': dpi,
+            'keybinds': keybinds,
+            'easy_shift': easy_shift,
+        })
         result = sp.run(
-            ["python", script, str(dpi)],
+            ["python", script, str(dpi), "--buttons", profile_json],
             capture_output=True, text=True, timeout=30
         )
 
