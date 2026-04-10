@@ -643,11 +643,11 @@
 
     <div class="sidebar-section" style="border-top:1px solid var(--border);padding-top:10px;">Onboard Profiles</div>
     <div style="display:flex;gap:4px;padding:4px 8px;flex-wrap:wrap;" id="profile-slots">
-      <button class="boot-btn" onclick="switchSlot(0)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 0</button>
-      <button class="boot-btn" onclick="switchSlot(1)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 1</button>
-      <button class="boot-btn" onclick="switchSlot(2)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 2</button>
-      <button class="boot-btn" onclick="switchSlot(3)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 3</button>
-      <button class="boot-btn" onclick="switchSlot(4)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 4</button>
+      <button class="boot-btn" onclick="switchSlot(0)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">1</button>
+      <button class="boot-btn" onclick="switchSlot(1)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">2</button>
+      <button class="boot-btn" onclick="switchSlot(2)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">3</button>
+      <button class="boot-btn" onclick="switchSlot(3)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">4</button>
+      <button class="boot-btn" onclick="switchSlot(4)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">5</button>
     </div>
 
     <div class="sidebar-footer">
@@ -1274,6 +1274,28 @@ function exportAll() {
   window.location.href = `/api/export-all/${currentBoot}`;
 }
 
+let activeSlot = -1;
+
+function highlightActiveSlot(slot) {
+  activeSlot = slot;
+  const btns = document.querySelectorAll('#profile-slots button');
+  btns.forEach((btn, i) => {
+    if (i === slot) {
+      btn.style.background = 'var(--green-dim)';
+      btn.style.borderColor = 'var(--green)';
+      btn.style.color = 'var(--green-txt)';
+    } else {
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }
+  });
+}
+
+function refreshActiveSlot() {
+  // Don't poll dongle — track locally
+}
+
 async function switchSlot(slot) {
   setStatus(`Switching to slot ${slot}...`);
   toast('Switching profile...');
@@ -1282,7 +1304,8 @@ async function switchSlot(slot) {
     const data = await res.json();
     if (data.success) {
       toast(data.message || 'Switched!', 'success');
-      setStatus(`Active: Slot ${slot}`);
+      setStatus(`Active: Profile ${slot + 1}`);
+      highlightActiveSlot(slot);
     } else {
       toast(data.error || 'Switch failed', 'error');
       setStatus('Switch failed');
@@ -1315,20 +1338,14 @@ async function syncFromSwarm() {
 }
 
 async function importToMouse() {
-  if (!selectedProfileId) { toast('Select a profile first', 'error'); return; }
-  const profile = storedProfiles.find(p => p.id === selectedProfileId);
-  if (!profile) { toast('Profile not found', 'error'); return; }
-
-  if (!confirm(`Write "${profile.name}" (DPI ${profile.dpi}) directly to the mouse?\n\nThis will briefly restart Swarm II.`)) return;
-
-  setStatus('Writing to mouse...');
-  toast('Writing profile to mouse...', 'info');
+  setStatus('Writing all slot profiles to mouse...');
+  toast('Writing profiles to mouse...', 'info');
 
   try {
     const res = await fetch('/api/import-to-mouse', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ profile_id: selectedProfileId, profile_idx: 0 })
+      body: JSON.stringify({ boot_id: currentBoot })
     });
     const data = await res.json();
     if (data.success) {

@@ -241,41 +241,49 @@ ONBOARD_FILE = SWARM_SETTING_DIR / "KONE_XP_AIR_Profile_Mgr.dat"
 @app.route("/api/import-to-mouse", methods=["POST"])
 def import_to_mouse():
     """
-    Write profile DPI directly to mouse hardware via roccat_write.py subprocess.
+    Write all slot profiles to mouse hardware via roccat_write.py subprocess.
+    Writes each assigned slot's profile (DPI + buttons) to its onboard slot.
     """
     try:
         import subprocess as sp
+        import json as jsonmod
 
         body = request.get_json() or {}
-        profile_id = body.get("profile_id")
+        boot_id = body.get("boot_id", "boot1")
 
+        slots = load_slots()
+        boot_slots = slots.get(boot_id, [None]*5)
         profiles = load_stored()
-        profile = next((p for p in profiles if p["id"] == profile_id), None)
-        if not profile:
-            return jsonify({"success": False, "error": "Profile not found"}), 404
+        prof_map = {p["id"]: p for p in profiles}
 
-        dpi = profile.get('dpi', 800)
-        keybinds = profile.get('keybinds', {})
-        easy_shift = profile.get('easy_shift', {})
+        # Build slot data for roccat_write.py
+        slot_profiles = []
+        for i, pid in enumerate(boot_slots):
+            if pid and pid in prof_map:
+                p = prof_map[pid]
+                slot_profiles.append({
+                    'slot': i,
+                    'name': p['name'],
+                    'dpi': p.get('dpi', 800),
+                    'keybinds': p.get('keybinds', {}),
+                    'easy_shift': p.get('easy_shift', {}),
+                })
 
-        # Write DPI and buttons via roccat_write.py subprocess
-        # Pass profile data as JSON argument
-        import json as jsonmod
+        if not slot_profiles:
+            return jsonify({"success": False, "error": "No profiles assigned to slots"})
+
         script = str(Path(r"C:\Claude Folder\roccat_write.py"))
-        profile_json = jsonmod.dumps({
-            'dpi': dpi,
-            'keybinds': keybinds,
-            'easy_shift': easy_shift,
-        })
+        slots_json = jsonmod.dumps(slot_profiles)
         result = sp.run(
-            ["python", script, str(dpi), "--buttons", profile_json],
-            capture_output=True, text=True, timeout=30
+            ["python", script, "slots", slots_json],
+            capture_output=True, text=True, timeout=60
         )
 
         if result.returncode == 0:
+            names = [sp['name'] for sp in slot_profiles]
             return jsonify({
                 "success": True,
-                "message": f"DPI set to {dpi} on the mouse!",
+                "message": f"Wrote {len(slot_profiles)} profiles to mouse: {', '.join(names)}",
             })
         else:
             return jsonify({
@@ -285,6 +293,25 @@ def import_to_mouse():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/active-slot", methods=["GET"])
+def get_active_slot():
+    """Read which profile slot is currently active on the mouse."""
+    try:
+        import hid as pyhid
+        dev = pyhid.device()
+        for d in pyhid.enumerate(0x10F5, 0x5017):
+            if d['usage_page'] == 0xFF03:
+                dev.open_path(d['path'])
+                break
+        dev.set_nonblocking(1)
+        r = dev.get_feature_report(0x06, 40)
+        dev.close()
+        active_slot = r[5] if len(r) > 5 else 0
+        return jsonify({"success": True, "active_slot": active_slot})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "active_slot": 0})
 
 
 @app.route("/api/switch-profile/<int:slot>", methods=["POST"])
@@ -304,7 +331,7 @@ def switch_profile(slot):
         if result.returncode == 0:
             return jsonify({
                 "success": True,
-                "message": f"Switched to profile slot {slot}!",
+                "message": f"Switched to profile {slot + 1}!",
             })
         else:
             return jsonify({

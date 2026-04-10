@@ -443,10 +443,14 @@ def find_dongle_path():
 
 
 def kill_swarm():
-    subprocess.run(['taskkill', '/f', '/im', 'Turtle Beach Swarm II.exe'], capture_output=True)
-    subprocess.run(['taskkill', '/f', '/im', 'Turtle Beach Device Service.exe'], capture_output=True)
-    subprocess.run(['taskkill', '/f', '/im', 'ROCCAT_Swarm_Monitor.exe'], capture_output=True)
-    time.sleep(2)
+    r1 = subprocess.run(['taskkill', '/f', '/im', 'Turtle Beach Swarm II.exe'], capture_output=True)
+    r2 = subprocess.run(['taskkill', '/f', '/im', 'Turtle Beach Device Service.exe'], capture_output=True)
+    r3 = subprocess.run(['taskkill', '/f', '/im', 'ROCCAT_Swarm_Monitor.exe'], capture_output=True)
+    # Only wait if we actually killed something
+    if r1.returncode == 0 or r2.returncode == 0 or r3.returncode == 0:
+        time.sleep(2)
+    else:
+        time.sleep(0.5)
 
 
 def open_dongle():
@@ -467,8 +471,49 @@ def open_dongle():
 def main():
     if len(sys.argv) < 2:
         print('Usage:')
-        print('  python roccat_write.py <dpi>          Set DPI on all profiles')
-        print('  python roccat_write.py switch <slot>  Switch to profile slot (0-4)')
+        print('  python roccat_write.py <dpi>              Set DPI on all profiles')
+        print('  python roccat_write.py switch <slot>      Switch to profile slot (0-4)')
+        print('  python roccat_write.py slots <json>       Write per-slot profiles from JSON')
+        return
+
+    # Write per-slot profiles
+    if sys.argv[1] == 'slots':
+        import json
+        slot_profiles = json.loads(sys.argv[2])
+        print(f'=== Writing {len(slot_profiles)} slot profiles ===\n')
+
+        kill_swarm()
+        dev = open_dongle()
+        if not dev:
+            return
+
+        for sp in slot_profiles:
+            slot = sp['slot']
+            dpi = sp.get('dpi', 800)
+            name = sp.get('name', f'Slot {slot}')
+            keybinds = sp.get('keybinds', {})
+            easy_shift = sp.get('easy_shift', {})
+
+            print(f'\n--- Slot {slot}: {name} (DPI {dpi}) ---')
+
+            # Write DPI profile
+            profile = build_profile([dpi]*5, profile_slot=slot)
+            write_profile(dev, profile)
+            time.sleep(0.1)
+
+            # Write button mappings
+            btn_data = build_button_data(keybinds, easy_shift, profile_slot=slot)
+            write_buttons(dev, btn_data)
+            time.sleep(0.1)
+
+            print(f'  Slot {slot} done!')
+
+        dll.hid_close(dev)
+        try:
+            dll.hid_exit()
+        except:
+            pass
+        print(f'\nAll {len(slot_profiles)} profiles written!')
         return
 
     # Check if this is a profile switch or DPI write
