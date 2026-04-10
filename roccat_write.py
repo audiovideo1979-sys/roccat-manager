@@ -138,7 +138,37 @@ def write_buttons(dev, button_data):
     time.sleep(0.05)
     handshake(dev)
 
-    print('Buttons written!')
+    print('Buttons written (pass 1)!')
+
+
+def write_buttons_full(dev, button_data):
+    """Write buttons with the full Swarm II protocol: write twice with init between."""
+    # First write
+    write_buttons(dev, button_data)
+
+    # Init + handshake between writes (exactly as Swarm II does)
+    send(dev, [0x06, 0x00, 0x00, 0x04])
+    time.sleep(0.05)
+    get_response(dev)
+    send(dev, [0x06, 0x00, 0x00, 0x05])
+    time.sleep(0.05)
+    get_response(dev)
+    handshake(dev)
+    time.sleep(0.1)
+
+    # Second write
+    write_buttons(dev, button_data)
+
+    # Final init + handshake
+    send(dev, [0x06, 0x00, 0x00, 0x04])
+    time.sleep(0.05)
+    get_response(dev)
+    send(dev, [0x06, 0x00, 0x00, 0x05])
+    time.sleep(0.05)
+    get_response(dev)
+    handshake(dev)
+
+    print('Buttons fully written (2 passes)!')
 
 
 def build_button_data(keybinds, easy_shift, profile_slot=0):
@@ -503,7 +533,7 @@ def main():
 
             # Write button mappings
             btn_data = build_button_data(keybinds, easy_shift, profile_slot=slot)
-            write_buttons(dev, btn_data)
+            write_buttons_full(dev, btn_data)
             time.sleep(0.1)
 
             print(f'  Slot {slot} done!')
@@ -567,7 +597,7 @@ def main():
         print(f'\nWriting button mappings...')
         for slot in range(5):
             btn_data = build_button_data(keybinds, easy_shift, profile_slot=slot)
-            write_buttons(dev, btn_data)
+            write_buttons_full(dev, btn_data)
             time.sleep(0.1)
             print(f'  Button slot {slot} written')
 
