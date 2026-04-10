@@ -641,6 +641,15 @@
     <div class="sidebar-section" style="border-top:1px solid var(--border);padding-top:10px;">Stored Profiles</div>
     <div class="profile-nav" id="stored-list-sidebar"></div>
 
+    <div class="sidebar-section" style="border-top:1px solid var(--border);padding-top:10px;">Onboard Profiles</div>
+    <div style="display:flex;gap:4px;padding:4px 8px;flex-wrap:wrap;" id="profile-slots">
+      <button class="boot-btn" onclick="switchSlot(0)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 0</button>
+      <button class="boot-btn" onclick="switchSlot(1)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 1</button>
+      <button class="boot-btn" onclick="switchSlot(2)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 2</button>
+      <button class="boot-btn" onclick="switchSlot(3)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 3</button>
+      <button class="boot-btn" onclick="switchSlot(4)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">Slot 4</button>
+    </div>
+
     <div class="sidebar-footer">
       <button class="export-all-btn" onclick="syncFromSwarm()" style="background:var(--accent-dim);border-color:var(--accent);color:var(--accent-txt);margin-bottom:6px;">Sync from Swarm II</button>
       <button class="export-all-btn" onclick="importToMouse()" style="background:var(--green-dim);border-color:var(--green);color:var(--green-txt);">Import to Mouse</button>
@@ -1263,6 +1272,26 @@ function exportProfile(profileId) {
 
 function exportAll() {
   window.location.href = `/api/export-all/${currentBoot}`;
+}
+
+async function switchSlot(slot) {
+  if (!confirm(`Switch mouse to onboard profile slot ${slot}?`)) return;
+  setStatus(`Switching to slot ${slot}...`);
+  toast('Switching profile...');
+  try {
+    const res = await fetch(`/api/switch-profile/${slot}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      toast(data.message || 'Switched!', 'success');
+      setStatus(`Active: Slot ${slot}`);
+    } else {
+      toast(data.error || 'Switch failed', 'error');
+      setStatus('Switch failed');
+    }
+  } catch (e) {
+    toast('Switch failed: ' + e.message, 'error');
+    setStatus('Switch failed');
+  }
 }
 
 async function syncFromSwarm() {

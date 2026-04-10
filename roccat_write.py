@@ -108,6 +108,39 @@ def write_profile(dev, profile_data):
     print('Profile written!')
 
 
+def switch_profile(dev, slot, num_profiles=5):
+    """
+    Switch the active profile on the mouse.
+    Captured from Swarm II via Frida:
+      06 01 45 06 02 [slot] [num_profiles]  — Profile SELECT
+      06 01 44 07                            — Handshake
+      06 01 4e 06 04 [slot] 01 01 ff        — Profile ACTIVATE
+      06 01 44 07                            — Handshake
+    """
+    print(f'Switching to profile slot {slot}...')
+
+    # Read pages first (Swarm II does this before switching)
+    for pg in range(4):
+        send(dev, [0x06, 0x01, 0x46, 0x06, 0x02, pg, 0x01], f'Read page {pg}')
+        time.sleep(0.05)
+        send(dev, [0x06, 0x01, 0x46, 0x07], 'Page handshake')
+        time.sleep(0.1)
+        get_response(dev)
+        time.sleep(0.05)
+
+    # SELECT profile
+    send(dev, [0x06, 0x01, 0x45, 0x06, 0x02, slot, num_profiles], f'Select slot {slot}')
+    time.sleep(0.05)
+    handshake(dev)
+
+    # ACTIVATE profile
+    send(dev, [0x06, 0x01, 0x4e, 0x06, 0x04, slot, 0x01, 0x01, 0xff], f'Activate slot {slot}')
+    time.sleep(0.05)
+    handshake(dev)
+
+    print(f'Switched to profile slot {slot}!')
+
+
 def build_profile(dpi_values, profile_slot=0, polling_rate=0x1f):
     """
     Build a 75-byte profile data block.
@@ -177,21 +210,57 @@ def find_dongle_path():
     return None
 
 
-def main():
-    target_dpi = int(sys.argv[1]) if len(sys.argv) > 1 else 1000
-
-    print(f'=== ROCCAT Direct Write — Setting DPI to {target_dpi} ===\n')
-
-    # Kill Swarm II to release the HID handle
-    print('Killing Swarm II...')
+def kill_swarm():
     subprocess.run(['taskkill', '/f', '/im', 'Turtle Beach Swarm II.exe'], capture_output=True)
     subprocess.run(['taskkill', '/f', '/im', 'Turtle Beach Device Service.exe'], capture_output=True)
+    subprocess.run(['taskkill', '/f', '/im', 'ROCCAT_Swarm_Monitor.exe'], capture_output=True)
     time.sleep(2)
 
-    # Find dongle path
+
+def open_dongle():
     path = find_dongle_path()
     if not path:
         print('Dongle not found!')
+        return None
+    print(f'Dongle path: {path}')
+    dll.hid_init()
+    dev = dll.hid_open_path(path)
+    if not dev:
+        print('Could not open device!')
+        return None
+    print(f'Device opened: {dev}')
+    return dev
+
+
+def main():
+    if len(sys.argv) < 2:
+        print('Usage:')
+        print('  python roccat_write.py <dpi>          Set DPI on all profiles')
+        print('  python roccat_write.py switch <slot>  Switch to profile slot (0-4)')
+        return
+
+    # Check if this is a profile switch or DPI write
+    if sys.argv[1] == 'switch':
+        slot = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+        print(f'=== Switching to profile slot {slot} ===\n')
+
+        kill_swarm()
+        dev = open_dongle()
+        if not dev:
+            return
+
+        switch_profile(dev, slot)
+        dll.hid_close(dev)
+        print('\nDone!')
+        return
+
+    target_dpi = int(sys.argv[1])
+
+    print(f'=== ROCCAT Direct Write — Setting DPI to {target_dpi} ===\n')
+
+    kill_swarm()
+    dev = open_dongle()
+    if not dev:
         return
 
     print(f'Dongle path: {path}')

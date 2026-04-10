@@ -278,6 +278,34 @@ def import_to_mouse():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/switch-profile/<int:slot>", methods=["POST"])
+def switch_profile(slot):
+    """Switch the mouse to a different onboard profile slot (0-4)."""
+    try:
+        import subprocess as sp
+        if slot < 0 or slot > 4:
+            return jsonify({"success": False, "error": "Slot must be 0-4"}), 400
+
+        script = str(Path(r"C:\Claude Folder\roccat_write.py"))
+        result = sp.run(
+            ["python", script, "switch", str(slot)],
+            capture_output=True, text=True, timeout=30
+        )
+
+        if result.returncode == 0:
+            return jsonify({
+                "success": True,
+                "message": f"Switched to profile slot {slot}!",
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.stderr or result.stdout or "Switch failed",
+            })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ── Routes — Live Swarm II INI Profiles ──────────────────────────────────────
 @app.route("/api/swarm/profiles", methods=["GET"])
 def get_swarm_profiles():
