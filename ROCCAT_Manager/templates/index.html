@@ -1275,7 +1275,6 @@ function exportAll() {
 }
 
 async function switchSlot(slot) {
-  if (!confirm(`Switch mouse to onboard profile slot ${slot}?`)) return;
   setStatus(`Switching to slot ${slot}...`);
   toast('Switching profile...');
   try {

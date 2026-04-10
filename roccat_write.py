@@ -251,6 +251,10 @@ def main():
 
         switch_profile(dev, slot)
         dll.hid_close(dev)
+        try:
+            dll.hid_exit()
+        except:
+            pass
         print('\nDone!')
         return
 
