@@ -295,6 +295,24 @@ def import_to_mouse():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/write-buttons", methods=["POST"])
+def write_buttons_to_mouse():
+    """Write button mappings to mouse via Frida injection into Swarm II."""
+    try:
+        from frida_inject import inject_buttons
+
+        result = inject_buttons()
+
+        return jsonify({
+            "success": result.get("success", False),
+            "message": result.get("message", ""),
+            "error": result.get("error", ""),
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/active-slot", methods=["GET"])
 def get_active_slot():
     """Read which profile slot is currently active on the mouse."""
