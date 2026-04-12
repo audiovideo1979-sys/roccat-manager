@@ -240,56 +240,48 @@ ONBOARD_FILE = SWARM_SETTING_DIR / "KONE_XP_AIR_Profile_Mgr.dat"
 
 @app.route("/api/import-to-mouse", methods=["POST"])
 def import_to_mouse():
-    """
-    Write all slot profiles to mouse hardware via roccat_write.py subprocess.
-    Writes each assigned slot's profile (DPI + buttons) to its onboard slot.
-    """
+    """Push DPI + buttons to mouse via Frida. Swarm stays running."""
     try:
-        import subprocess as sp
-        import json as jsonmod
+        from frida_inject import push_profile as do_push
 
         body = request.get_json() or {}
+        profile_id = body.get("profile_id")
         boot_id = body.get("boot_id", "boot1")
 
-        slots = load_slots()
-        boot_slots = slots.get(boot_id, [None]*5)
+        # If profile_id given, push that profile
+        if profile_id:
+            profiles = load_stored()
+            profile = next((p for p in profiles if p["id"] == profile_id), None)
+            if not profile:
+                return jsonify({"success": False, "error": "Profile not found"}), 404
+            result = do_push(
+                dpi=profile.get('dpi', 800),
+                keybinds=profile.get('keybinds', {}),
+                easy_shift=profile.get('easy_shift', {}),
+            )
+            return jsonify(result)
+
+        # Otherwise push all slot profiles
+        slots_data = load_slots()
+        boot_slots = slots_data.get(boot_id, [None]*5)
         profiles = load_stored()
         prof_map = {p["id"]: p for p in profiles}
 
-        # Build slot data for roccat_write.py
-        slot_profiles = []
+        pushed = []
         for i, pid in enumerate(boot_slots):
             if pid and pid in prof_map:
                 p = prof_map[pid]
-                slot_profiles.append({
-                    'slot': i,
-                    'name': p['name'],
-                    'dpi': p.get('dpi', 800),
-                    'keybinds': p.get('keybinds', {}),
-                    'easy_shift': p.get('easy_shift', {}),
-                })
+                result = do_push(
+                    dpi=p.get('dpi', 800),
+                    keybinds=p.get('keybinds', {}),
+                    easy_shift=p.get('easy_shift', {}),
+                )
+                pushed.append(p['name'])
 
-        if not slot_profiles:
-            return jsonify({"success": False, "error": "No profiles assigned to slots"})
-
-        script = str(Path(r"C:\Claude Folder\roccat_write.py"))
-        slots_json = jsonmod.dumps(slot_profiles)
-        result = sp.run(
-            ["python", script, "slots", slots_json],
-            capture_output=True, text=True, timeout=60
-        )
-
-        if result.returncode == 0:
-            names = [sp['name'] for sp in slot_profiles]
-            return jsonify({
-                "success": True,
-                "message": f"Wrote {len(slot_profiles)} profiles to mouse: {', '.join(names)}",
-            })
+        if pushed:
+            return jsonify({"success": True, "message": f"Pushed: {', '.join(pushed)}"})
         else:
-            return jsonify({
-                "success": False,
-                "error": result.stderr or result.stdout or "Write failed",
-            })
+            return jsonify({"success": False, "error": "No profiles in slots"})
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -301,14 +293,33 @@ def write_buttons_to_mouse():
     try:
         from frida_inject import inject_buttons
 
-        result = inject_buttons()
+        body = request.get_json() or {}
+        profile_id = body.get("profile_id")
 
-        return jsonify({
-            "success": result.get("success", False),
-            "message": result.get("message", ""),
-            "error": result.get("error", ""),
-        })
+        keybinds = None
+        easy_shift = None
+        if profile_id:
+            profiles = load_stored()
+            profile = next((p for p in profiles if p["id"] == profile_id), None)
+            if profile:
+                keybinds = profile.get("keybinds", {})
+                easy_shift = profile.get("easy_shift", {})
 
+        from frida_inject import push_profile
+        result = push_profile(keybinds=keybinds, easy_shift=easy_shift)
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/profiles/live", methods=["GET"])
+def get_live_profiles():
+    """Read all 5 profiles directly from Swarm II's memory. Always accurate."""
+    try:
+        from frida_inject import read_profiles
+        result = read_profiles()
+        return jsonify(result)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -334,28 +345,14 @@ def get_active_slot():
 
 @app.route("/api/switch-profile/<int:slot>", methods=["POST"])
 def switch_profile(slot):
-    """Switch the mouse to a different onboard profile slot (0-4)."""
+    """Switch the mouse to a different onboard profile slot (0-4). Uses Frida — Swarm stays running."""
     try:
-        import subprocess as sp
+        from frida_inject import switch_profile as do_switch
         if slot < 0 or slot > 4:
             return jsonify({"success": False, "error": "Slot must be 0-4"}), 400
 
-        script = str(Path(r"C:\Claude Folder\roccat_write.py"))
-        result = sp.run(
-            ["python", script, "switch", str(slot)],
-            capture_output=True, text=True, timeout=30
-        )
-
-        if result.returncode == 0:
-            return jsonify({
-                "success": True,
-                "message": f"Switched to profile {slot + 1}!",
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "error": result.stderr or result.stdout or "Switch failed",
-            })
+        result = do_switch(slot)
+        return jsonify(result)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

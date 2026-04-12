@@ -635,25 +635,15 @@
       <button class="boot-btn"        id="tab-boot2" onclick="switchBoot('boot2')">Work</button>
     </div>
 
-    <div class="sidebar-section">Active Slots</div>
+    <div class="sidebar-section">Onboard Profiles</div>
     <div id="active-slots-sidebar" style="padding:0 8px 4px;"></div>
 
     <div class="sidebar-section" style="border-top:1px solid var(--border);padding-top:10px;">Stored Profiles</div>
     <div class="profile-nav" id="stored-list-sidebar"></div>
 
-    <div class="sidebar-section" style="border-top:1px solid var(--border);padding-top:10px;">Onboard Profiles</div>
-    <div style="display:flex;gap:4px;padding:4px 8px;flex-wrap:wrap;" id="profile-slots">
-      <button class="boot-btn" onclick="switchSlot(0)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">1</button>
-      <button class="boot-btn" onclick="switchSlot(1)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">2</button>
-      <button class="boot-btn" onclick="switchSlot(2)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">3</button>
-      <button class="boot-btn" onclick="switchSlot(3)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">4</button>
-      <button class="boot-btn" onclick="switchSlot(4)" style="flex:1;min-width:0;font-size:11px;padding:4px 2px;">5</button>
-    </div>
 
     <div class="sidebar-footer">
-      <button class="export-all-btn" onclick="syncFromSwarm()" style="background:var(--accent-dim);border-color:var(--accent);color:var(--accent-txt);margin-bottom:6px;">Sync from Swarm II</button>
-      <button class="export-all-btn" onclick="importToMouse()" style="background:var(--green-dim);border-color:var(--green);color:var(--green-txt);">Import DPI</button>
-      <button class="export-all-btn" onclick="writeButtons()" style="background:var(--amber-dim);border-color:var(--amber);color:var(--amber-txt);margin-top:4px;">Write Buttons</button>
+      <button class="export-all-btn" onclick="pushToMouse()" style="background:var(--green-dim);border-color:var(--green);color:var(--green-txt);">Push to Mouse</button>
     </div>
   </aside>
 
@@ -834,10 +824,44 @@ async function loadSlots() {
   renderActiveSlots();
 }
 
+async function loadLiveProfiles() {
+  // Read profiles directly from Swarm II's memory — always accurate
+  try {
+    const res = await fetch('/api/profiles/live');
+    const data = await res.json();
+    if (data.success && data.profiles) {
+      // Update stored profiles with live data from Swarm
+      const slotNames = ['WWM', 'Main Test', 'Main Test IMPORT', 'Grounded', 'Default Profile 03'];
+      for (const lp of data.profiles) {
+        const name = slotNames[lp.slot] || ('Profile ' + (lp.slot + 1));
+        const existing = storedProfiles.find(p => p.name === name);
+        if (existing) {
+          existing.dpi = lp.dpi[lp.active_stage || 0] || 800;
+          existing.dpi_stages = lp.dpi;
+          if (lp.keybinds && Object.keys(lp.keybinds).length > 0) {
+            existing.keybinds = lp.keybinds;
+          }
+          if (lp.easy_shift && Object.keys(lp.easy_shift).length > 0) {
+            existing.easy_shift = lp.easy_shift;
+          }
+        }
+      }
+      // Re-render
+      renderStoredList();
+      if (selectedProfileId) renderEditor();
+      setStatus('Profiles loaded from mouse');
+    }
+  } catch(e) {
+    // Swarm not running — use stored profiles as fallback
+    setStatus('Using saved profiles (Swarm II not running)');
+  }
+}
+
 async function loadAll() {
   setStatus('Loading...');
   await Promise.all([loadStored(), loadSlots()]);
-  setStatus('Ready');
+  // Then load live data from Swarm to ensure profiles match mouse
+  await loadLiveProfiles();
 }
 
 // ── Active Slots Rendering ─────────────────────────────────────────────────
@@ -871,16 +895,30 @@ function renderActiveSlots() {
   container.innerHTML = html;
 }
 
-function onSlotClick(slotNum) {
+async function onSlotClick(slotNum) {
   const slotData = activeSlots.find(s => s.slot === slotNum);
   if (slotData && slotData.profile) {
     selectedSlot = slotNum;
-    // Find the stored profile by id and select it for editing
     const profileId = slotData.profile.id;
     if (profileId && storedProfiles.find(p => p.id === profileId)) {
       selectStoredProfile(profileId);
     }
     renderActiveSlots();
+    // Switch profile AND push DPI+buttons to mouse
+    setStatus('Switching to ' + slotData.profile.name + '...');
+    await switchSlot(slotNum - 1);
+    // Also push this profile's settings
+    try {
+      const res = await fetch('/api/import-to-mouse', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ profile_id: profileId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStatus('Active: ' + slotData.profile.name);
+      }
+    } catch(e) {}
   }
 }
 
@@ -1338,39 +1376,19 @@ async function syncFromSwarm() {
   }
 }
 
-async function writeButtons() {
-  setStatus('Writing buttons to mouse...');
-  toast('Injecting button data (takes ~15 seconds)...', 'info');
+async function pushToMouse() {
+  if (!selectedProfileId) { toast('Select a profile first', 'error'); return; }
+  const profile = storedProfiles.find(p => p.id === selectedProfileId);
+  if (!profile) { toast('Profile not found', 'error'); return; }
 
-  try {
-    const res = await fetch('/api/write-buttons', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: '{}'
-    });
-    const data = await res.json();
-    if (data.success) {
-      toast(data.message || 'Buttons written!', 'success');
-      setStatus('Buttons written to mouse');
-    } else {
-      toast(data.error || 'Button write failed', 'error');
-      setStatus('Button write failed');
-    }
-  } catch (e) {
-    toast('Button write failed: ' + e.message, 'error');
-    setStatus('Button write failed');
-  }
-}
-
-async function importToMouse() {
-  setStatus('Writing all slot profiles to mouse...');
-  toast('Writing profiles to mouse...', 'info');
+  setStatus(`Pushing ${profile.name} to mouse...`);
+  toast(`Pushing ${profile.name} (takes ~10 seconds)...`, 'info');
 
   try {
     const res = await fetch('/api/import-to-mouse', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ boot_id: currentBoot })
+      body: JSON.stringify({ profile_id: selectedProfileId })
     });
     const data = await res.json();
     if (data.success) {
