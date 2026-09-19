@@ -705,6 +705,7 @@
           <input class="topbar-name" id="profile-name-input" type="text" value="" onblur="saveProfileName()" onkeydown="if(event.key==='Enter')this.blur()">
           <span style="color:var(--text3);font-size:12px;margin-left:8px;">DPI</span>
           <input class="dpi-input" id="dpi-input" type="number" min="100" max="36000" step="100" value="800" onchange="updateDPI(this.value)" style="width:80px;">
+          <button class="boot-btn" onclick="readDpiFromMouse()" title="Diagnostic: push this DPI first, then click to read the mouse back and check whether the DPI write actually landed" style="margin-left:6px;font-size:11px;">Read back</button>
           <span style="flex:1"></span>
           <button class="boot-btn" onclick="duplicateProfile(selectedProfileId)">Duplicate</button>
           <button class="boot-btn" onclick="exportProfile(selectedProfileId)">Export .dat</button>
@@ -825,7 +826,7 @@ const KEYBIND_OPTIONS = [
   'Browser Back', 'Browser Forward',
   'DPI Up', 'DPI Down', 'DPI Cycle Up', 'DPI Cycle Down',
   'Page Up', 'Page Down', 'Delete', 'Insert', 'Home', 'End', 'Escape',
-  'Easy Shift', 'Profile Cycle',
+  'Easy Shift', 'Profile Cycle', 'Toggle RGB',
   'Ctrl', 'Shift', 'Alt', 'Right Ctrl', 'Right Shift', 'Right Alt',
   'Copy', 'Paste', 'Cut', 'Undo', 'Redo',
   'Play/Pause', 'Next Track', 'Prev Track', 'Volume Up', 'Volume Down',
@@ -1098,6 +1099,45 @@ function updateDPI(val) {
   profile.dpi = parsed;
   document.getElementById('dpi-input').value = parsed;
   autosave();
+}
+
+// Diagnostic: read the mouse's profile block back and check whether the DPI we pushed actually landed.
+// The read-back byte layout is undecoded, so instead of decoding we just search the raw bytes for the
+// DPI value (stored little-endian). If it's there, the profile-block write reached onboard memory; if
+// not, the mouse is rejecting the 0x46 write. Push the DPI first, then click this. Use a distinctive
+// value (e.g. 3000) so the two bytes don't collide with unrelated data.
+async function readDpiFromMouse() {
+  const profile = getSelectedProfile();
+  const dpi = parseInt((profile && profile.dpi) || document.getElementById('dpi-input').value, 10);
+  const lo = (dpi & 0xff).toString(16).padStart(2, '0');
+  const hi = ((dpi >> 8) & 0xff).toString(16).padStart(2, '0');
+  const needle = lo + ' ' + hi;
+  setStatus('Reading the profile block back from the mouse...');
+  try {
+    const res = await fetch('/api/mouse/read-pages', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ cmd: 'profile', flag: 1, count: 5 })
+    });
+    const data = await res.json();
+    if (!data.success) { toast('Read failed: ' + (data.error || ''), 'error'); setStatus('Read failed'); return; }
+    // Each page response is a raw feature report; drop its leading report-id byte and join them.
+    const hex = (data.pages || [])
+      .map(p => p.trim().split(/\s+/).slice(1).join(' '))
+      .join(' ');
+    const found = hex.includes(needle);
+    console.log('[read-back] profile block bytes:', hex);
+    console.log('[read-back] DPI', dpi, '= "' + needle + '" ->', found ? 'FOUND' : 'NOT found');
+    if (found) {
+      toast(`Read-back contains DPI ${dpi} (${needle}) — the profile write landed`, 'success');
+      setStatus(`Read-back: DPI ${dpi} is in the mouse's profile block (write landed)`);
+    } else {
+      toast(`DPI ${dpi} (${needle}) is NOT in the read-back — the profile write is being rejected`, 'error');
+      setStatus(`Read-back: DPI ${dpi} not found — profile block not applied`);
+    }
+  } catch (e) {
+    toast('Read failed: ' + e.message, 'error');
+    setStatus('Read failed');
+  }
 }
 
 // ── Keybinds ───────────────────────────────────────────────────────────────

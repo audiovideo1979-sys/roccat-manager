@@ -25,6 +25,14 @@ ROCCAT Manager Full — Changelog
     bare "Win" option from the button menu; the experimental encoding was reverted. For a Start-menu
     button use Ctrl+Esc; Win+<key> shortcuts (Show Desktop, Snipping Tool) already work.
   - Tests: 97 pass (active-slot persistence, read-does-not-clobber, Escape binds as a plain key).
+  - DPI-set-in-app "does nothing" + RGB won't turn off: both live in the 0x46 profile block, which
+    (unlike the confirmed 0x47 button block) is likely being REJECTED by the mouse. Investigation in
+    progress (see HANDOFF). Two things added toward it:
+    * "Toggle RGB" is now a button option (wire 00 00 0b 08, in the confirmed 0x47 block) — an
+      immediate way to turn onboard lighting off with a button press while the persistent fix lands.
+    * "Read back" diagnostic next to the DPI field: push a DPI, click it, and it reads the profile
+      block back and checks whether the DPI value actually reached onboard memory (localizes whether
+      the 0x46 write is rejected vs. not activated — no Swarm needed).
 
 @5 — 2026-09-19 (hardware confirmed + desktop app)
   - DIRECT WRITES CONFIRMED on the mouse (A/B variant B): our own handle changed

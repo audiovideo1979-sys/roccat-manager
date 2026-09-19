@@ -48,6 +48,20 @@
   the button menu and the modifier-byte experiment reverted. For a Start-menu button use **Ctrl+Esc**
   (00 29 01 06); Win+<key> shortcuts (Show Desktop = Win+D, Snipping Tool = Win+Shift+S) work and are
   already offered. Escape is now a first-class dropdown option (00 29 00 06) — handy for AutoCAD.
+- **OPEN (2026-09-19): DPI set in the app does nothing, and RGB won't turn off.** Both are the **0x46
+  profile block**, which carries DPI (bytes 6-26) AND the onboard LEDs (7×5 entries at 36-70 + an
+  effect-mode byte). The 0x47 button block is confirmed on hardware; the 0x46 block is NOT (April's
+  "DPI works" was reconstructed, never re-verified). Leading hypothesis: the mouse rejects the 0x46
+  write. Prime suspect is the **commit**: we send `06 01 46 06 03 ff <cs16/75B>`; Swarm's capture shows
+  `06 01 46 06 03 dc …` (byte5 = colour-B, checksum over 76B) — see protocol.py:302-306. Second
+  suspect: the DPI block never gets the profile-switch activate tail the buttons use. NOTE the app
+  already writes the LEDs (hardcoded pink `14 ff 00 48 ff` ×7) on every push, so if the block applied,
+  pushes would force the mouse pink — it doesn't, which supports "block rejected".
+  - Shipped toward it: a **"Read back"** button by the DPI field (push a distinctive DPI like 3000,
+    click, it searches the profile read-back for the LE16 bytes to see if the write landed — no Swarm),
+    and **"Toggle RGB"** as a button action (00 00 0b 08, in the working 0x47 block) as an interim
+    lighting-off. Next: capture Swarm changing DPI + lighting-off (0x4d filter removed) and match the
+    commit/activation/LED bytes exactly, then make lighting-off the default. Do NOT guess these bytes.
 
 ## Where things stand (2026-09-19)
 
