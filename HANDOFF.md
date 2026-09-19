@@ -22,6 +22,11 @@
   wrong-bytes problem, not the handle. The direct-vs-Frida button A/B test (variant B) is the empirical
   confirmation — pending.
 - Bug fixed live: frida 17 removed `frida.enumerate_processes()` (now on the device object).
+- Modifiers on mouse buttons (Ctrl/Alt for AutoCAD) can leave a modifier stuck "held" in Windows when
+  a profile switch drops the button's key-up — the keyboard then acts dead. Fix: `kone_xp_air/winput.py`
+  `release_modifiers()` (ctypes SendInput, no-op off Windows) is called after every mouse job in
+  `run_mouse_job`, and a "Release stuck keys" button (`POST /api/release-modifiers`, no mouse lock)
+  clears it on demand. The feature stays; it's just made safe.
 
 ## Where things stand (2026-09-19)
 

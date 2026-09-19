@@ -65,6 +65,7 @@ if not FROZEN and str(REPO_ROOT) not in sys.path:
 from kone_xp_air import protocol as kxp_protocol, actions as kxp_actions, datfile as kxp_datfile  # noqa: E402
 from kone_xp_air.session import KoneXPAir  # noqa: E402
 from kone_xp_air.transport import make_transport, TransportError, is_swarm_running, format_results, kill_swarm  # noqa: E402
+from kone_xp_air.winput import release_modifiers  # noqa: E402
 
 if FROZEN:
     seed_profiles()
@@ -347,6 +348,12 @@ def run_mouse_job(fn):
             out = fn(mouse)
         finally:
             mouse.transport.close()
+            # A profile switch can drop the "key up" of a button bound to a modifier, leaving it
+            # stuck "held" in Windows. Clear any stuck modifier after every mouse op, best-effort.
+            try:
+                release_modifiers()
+            except Exception:
+                pass
         out.setdefault("success", True)
         return out
     except TransportError as e:
@@ -405,6 +412,15 @@ def mouse_config():
 @app.route("/api/mouse/log", methods=["GET"])
 def mouse_log():
     return jsonify({"success": True, "log": LAST_MOUSE_LOG})
+
+
+@app.route("/api/release-modifiers", methods=["POST"])
+def release_stuck_modifiers():
+    """Send a key-up for every keyboard modifier, clearing any stuck 'held' Ctrl/Alt/Shift/Win.
+    Deliberately does NOT take MOUSE_LOCK — it's an OS keyboard action, so it works even mid-push."""
+    r = release_modifiers()
+    return jsonify({"success": bool(r.get("ok")), "released": r.get("released", 0),
+                    "note": r.get("skipped") or r.get("error") or ""})
 
 
 @app.route("/api/actions", methods=["GET"])

@@ -645,6 +645,7 @@
     <div class="sidebar-footer">
       <button class="export-all-btn" onclick="pushToMouse()" style="background:var(--green-dim);border-color:var(--green);color:var(--green-txt);">Push to Mouse</button>
       <button class="export-all-btn" onclick="pushAllSlots()" style="margin-top:6px;">Push all 5 slots</button>
+      <button class="export-all-btn" onclick="releaseKeys()" style="margin-top:6px;" title="If Ctrl/Alt/Shift feels stuck after switching profiles, click this to release it">Release stuck keys</button>
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:var(--text3);">
         <span>Transport</span>
         <select id="transport-select" onchange="setTransport(this.value)" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;">
@@ -1411,6 +1412,23 @@ async function pushToMouse() {
   } catch (e) {
     toast('Write failed: ' + e.message, 'error');
     setStatus('Write failed');
+  }
+}
+
+async function releaseKeys() {
+  setStatus('Releasing stuck keys...');
+  try {
+    const res = await fetch('/api/release-modifiers', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      toast('Released stuck modifier keys', 'success');
+      setStatus('Ready');
+    } else {
+      toast('Could not release keys' + (data.note ? ': ' + data.note : ''), 'error');
+      setStatus('Ready');
+    }
+  } catch (e) {
+    toast('Release failed: ' + e.message, 'error');
   }
 }
 

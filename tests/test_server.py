@@ -106,3 +106,31 @@ def test_lock_rejects_overlapping_jobs(client, server):
         assert not r['success'] and 'still running' in r['error']
     finally:
         server.MOUSE_LOCK.release()
+
+
+def test_release_modifiers_endpoint(client):
+    r = client.post('/api/release-modifiers').get_json()
+    assert r['success'] is True   # off-Windows the helper no-ops but reports ok
+    assert 'released' in r
+
+
+def test_switch_and_push_release_stuck_modifiers(server, client, monkeypatch):
+    calls = {'n': 0}
+    monkeypatch.setattr(server, 'release_modifiers', lambda: calls.__setitem__('n', calls['n'] + 1) or {'ok': True, 'released': 0})
+    r = client.post('/api/switch-profile/2').get_json()
+    assert r['success']
+    assert calls['n'] == 1, 'switch must release modifiers afterwards'
+    slots = server.load_slots()['boot1']
+    slot1 = next(i for i, pid in enumerate(slots) if pid) + 1
+    client.post('/api/push-slot', json={'boot_id': 'boot1', 'slot': slot1})
+    assert calls['n'] == 2, 'push must release modifiers afterwards'
+
+
+def test_release_endpoint_does_not_take_the_mouse_lock(server, client):
+    # the OS keyboard action must work even while a mouse op holds the lock
+    assert server.MOUSE_LOCK.acquire()
+    try:
+        r = client.post('/api/release-modifiers').get_json()
+        assert r['success'] is True
+    finally:
+        server.MOUSE_LOCK.release()
