@@ -1,49 +1,30 @@
 # ROCCAT Manager — Kone XP Air
 
-Custom profile manager UI that replaces SWARM II for daily use.
-Drives SWARM II invisibly in the background via pywinauto automation.
+Profile manager for the Kone XP Air that writes to the mouse without opening Swarm II.
 
-## First time setup
-1. Double-click `INSTALL_AND_RUN.bat`
-2. That's it — opens in your browser at http://localhost:5000
+## First time
+1. Double-click `INSTALL_AND_RUN.bat` (installs `flask frida hidapi`, starts the server, opens the browser).
+2. Leave Swarm II running in the tray for now — the default transport goes through it. Once
+   `tools/ab_test_buttons.py` shows the direct handle works, pick **Direct** in the sidebar and Swarm II
+   is no longer needed.
 
 ## Daily use
-- Double-click `Launch.bat`
-- Edit DPI, keybinds, polling rate in the UI
-- Click **Apply to mouse →** to push one profile
-- Click **Push all to SWARM II** to push all 5 at once
-- Changes auto-save to JSON every 800ms
+- `Launch.bat` → http://localhost:5555
+- Left column: **Onboard Profiles** 1–5 (what is on the mouse for this boot) and **Stored Profiles**
+  (the library). Drag a stored profile onto a slot to assign it.
+- Click a slot → that slot's profile is written to the mouse and the mouse switches to it (about 15 s).
+- **Push to Mouse** writes the selected stored profile to the slot(s) it is assigned to.
+- **Push all 5 slots** writes every assigned slot.
+- Edit DPI and buttons in the editor; changes autosave to `profiles/stored.json`. Buttons with no known
+  wire code are kept as they were on the mouse and reported in the toast.
+- Boot tabs (Gaming / Work) keep separate slot assignments; the mouse only holds one set at a time.
 
-## File structure
-```
-roccat_manager/
-├── server.py                  Flask backend
-├── templates/index.html       Custom UI
-├── profiles/
-│   ├── boot1.json             Boot 1 profile data
-│   └── boot2.json             Boot 2 profile data
-├── automation/
-│   └── roccat_automation.py   pywinauto SWARM II driver
-├── INSTALL_AND_RUN.bat        First time setup
-└── Launch.bat                 Daily launcher
-```
+## Importing what Swarm II has
+`POST /api/import-dat` with a `.dat` export (or `{"source": "onboard"}` for the live container in
+`%APPDATA%\Turtle Beach\Swarm II\Setting`) creates stored profiles from Swarm's own data.
 
-## Tuning pywinauto after install
-Once Python is installed, run the inspector once to verify SWARM II's
-control names match what roccat_automation.py expects:
-
-```
-python automation/roccat_automation.py
-```
-
-This writes `inspector_output.txt`. Open it and check that the control
-names match these in roccat_automation.py:
-- Profile slot buttons
-- DPI stage edit fields
-- Polling rate radio buttons
-- Button assignment list items
-
-## Boot setup
-- Boot 1: `$BOOT_NAME = "Boot1"` is pre-set
-- Boot 2: switch to Boot 2 tab in the UI — data saves to `profiles/boot2.json`
-  on that drive's copy of the app
+## Troubleshooting
+- "Swarm II not running" → start it (tray) or switch Transport to Direct.
+- "another mouse operation is still running" → wait; pushes are serialised.
+- Frida "access denied" → run the launcher as Administrator.
+- See `RUN_ON_PC.md` and `HANDOFF.md` for the diagnostics.

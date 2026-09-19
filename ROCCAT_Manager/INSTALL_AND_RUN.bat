@@ -21,7 +21,7 @@ echo.
 
 :: Install dependencies
 echo  Installing Python packages...
-pip install flask pywinauto pywin32 --quiet
+pip install flask frida hidapi --quiet
 echo  [OK] Packages installed
 echo.
 

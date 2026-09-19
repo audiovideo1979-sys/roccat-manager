@@ -644,6 +644,15 @@
 
     <div class="sidebar-footer">
       <button class="export-all-btn" onclick="pushToMouse()" style="background:var(--green-dim);border-color:var(--green);color:var(--green-txt);">Push to Mouse</button>
+      <button class="export-all-btn" onclick="pushAllSlots()" style="margin-top:6px;">Push all 5 slots</button>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:var(--text3);">
+        <span>Transport</span>
+        <select id="transport-select" onchange="setTransport(this.value)" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;">
+          <option value="frida">Frida (Swarm II running)</option>
+          <option value="direct">Direct (our handle)</option>
+        </select>
+      </div>
+      <div id="mouse-status" style="font-size:10px;color:var(--text3);margin-top:4px;"></div>
     </div>
   </aside>
 
@@ -767,18 +776,19 @@ const KEYBIND_LABELS = {
   easy_shift:     'Easy Shift',
 };
 
+// Only names kone_xp_air/actions.py can encode. Anything else must be recorded as a hotkey.
+// (Mute and macros have no known wire code yet - see HANDOFF.md.)
 const KEYBIND_OPTIONS = [
-  'Left Click', 'Right Click', 'Middle Click',
+  'Left Click', 'Right Click', 'Middle Click', 'Double-Click',
   'Scroll Up', 'Scroll Down',
   'Tilt Left', 'Tilt Right',
   'Browser Back', 'Browser Forward',
-  'DPI Up', 'DPI Down', 'DPI Cycle', 'DPI Cycle Up', 'DPI Cycle Down',
+  'DPI Up', 'DPI Down', 'DPI Cycle Up', 'DPI Cycle Down',
   'Page Up', 'Page Down', 'Delete', 'Insert', 'Home', 'End',
-  'Easy Shift',
+  'Easy Shift', 'Profile Cycle',
   'Copy', 'Paste', 'Cut', 'Undo', 'Redo',
-  'Play/Pause', 'Next Track', 'Prev Track', 'Volume Up', 'Volume Down', 'Mute',
+  'Play/Pause', 'Next Track', 'Prev Track', 'Volume Up', 'Volume Down',
   'Snipping Tool', 'Task Manager', 'Show Desktop',
-  'Macro 1', 'Macro 2', 'Macro 3',
   'Disabled',
 ];
 
@@ -824,44 +834,44 @@ async function loadSlots() {
   renderActiveSlots();
 }
 
-async function loadLiveProfiles() {
-  // Read profiles directly from Swarm II's memory — always accurate
+let mouseConfig = { transport: 'frida' };
+
+async function loadMouseStatus() {
+  // Transport + whether Swarm II / the receiver are present. Never touches stored profiles.
   try {
-    const res = await fetch('/api/profiles/live');
+    const res = await fetch('/api/mouse/status');
     const data = await res.json();
-    if (data.success && data.profiles) {
-      // Update stored profiles with live data from Swarm
-      const slotNames = ['WWM', 'Main Test', 'Main Test IMPORT', 'Grounded', 'Default Profile 03'];
-      for (const lp of data.profiles) {
-        const name = slotNames[lp.slot] || ('Profile ' + (lp.slot + 1));
-        const existing = storedProfiles.find(p => p.name === name);
-        if (existing) {
-          existing.dpi = lp.dpi[lp.active_stage || 0] || 800;
-          existing.dpi_stages = lp.dpi;
-          if (lp.keybinds && Object.keys(lp.keybinds).length > 0) {
-            existing.keybinds = lp.keybinds;
-          }
-          if (lp.easy_shift && Object.keys(lp.easy_shift).length > 0) {
-            existing.easy_shift = lp.easy_shift;
-          }
-        }
-      }
-      // Re-render
-      renderStoredList();
-      if (selectedProfileId) renderEditor();
-      setStatus('Profiles loaded from mouse');
+    if (!data.success) throw new Error(data.error || 'status failed');
+    mouseConfig = data.config || mouseConfig;
+    const sel = document.getElementById('transport-select');
+    if (sel) sel.value = mouseConfig.transport === 'direct' ? 'direct' : 'frida';
+    const bits = [];
+    bits.push(mouseConfig.transport === 'direct' ? 'direct handle' : 'via Swarm II');
+    if (data.swarm_running !== null) bits.push('Swarm II ' + (data.swarm_running ? 'running' : 'not running'));
+    if (data.receiver_found !== null) bits.push('receiver ' + (data.receiver_found ? 'found' : 'not found'));
+    document.getElementById('mouse-status').textContent = bits.join(' | ');
+    if (mouseConfig.transport !== 'direct' && data.swarm_running === false) {
+      setStatus('Swarm II is not running - start it (tray) or switch to the direct transport');
+    } else {
+      setStatus('Ready');
     }
-  } catch(e) {
-    // Swarm not running — use stored profiles as fallback
-    setStatus('Using saved profiles (Swarm II not running)');
+  } catch (e) {
+    document.getElementById('mouse-status').textContent = 'mouse status unavailable';
+    setStatus('Ready (mouse status unavailable)');
   }
+}
+
+async function setTransport(kind) {
+  const data = await apiFetch('PUT', '/mouse/config', { transport: kind });
+  if (data.success) { mouseConfig = data.config; toast('Transport: ' + kind, 'success'); }
+  else toast(data.error || 'Could not change transport', 'error');
+  loadMouseStatus();
 }
 
 async function loadAll() {
   setStatus('Loading...');
   await Promise.all([loadStored(), loadSlots()]);
-  // Then load live data from Swarm to ensure profiles match mouse
-  await loadLiveProfiles();
+  await loadMouseStatus();
 }
 
 // ── Active Slots Rendering ─────────────────────────────────────────────────
@@ -872,6 +882,7 @@ function renderActiveSlots() {
     const slotData = activeSlots.find(s => s.slot === i);
     const profile = slotData ? slotData.profile : null;
     const isActive = selectedProfileId && profile && profile.id === selectedProfileId;
+    const isOnMouse = activeSlot === i - 1;
     const cls = 'profile-item' + (isActive ? ' active' : '');
 
     html += `<div class="${cls}" data-slot="${i}"
@@ -879,7 +890,7 @@ function renderActiveSlots() {
       ondragover="onSlotDragOver(event, this)"
       ondragleave="onSlotDragLeave(event, this)"
       ondrop="onSlotDrop(event, ${i}, this)">
-      <span class="profile-slot-num">${i}</span>`;
+      <span class="profile-slot-num" style="${isOnMouse ? 'background:var(--green-dim);color:var(--green-txt);border-color:var(--green);' : ''}" title="${isOnMouse ? 'Active on the mouse' : ''}">${i}</span>`;
 
     if (profile) {
       html += `<span class="profile-dot" style="background:${profile.color || '#888'}"></span>
@@ -897,28 +908,41 @@ function renderActiveSlots() {
 
 async function onSlotClick(slotNum) {
   const slotData = activeSlots.find(s => s.slot === slotNum);
-  if (slotData && slotData.profile) {
-    selectedSlot = slotNum;
-    const profileId = slotData.profile.id;
-    if (profileId && storedProfiles.find(p => p.id === profileId)) {
-      selectStoredProfile(profileId);
-    }
+  if (!slotData || !slotData.profile) return;
+  selectedSlot = slotNum;
+  const profileId = slotData.profile.id;
+  if (profileId && storedProfiles.find(p => p.id === profileId)) selectStoredProfile(profileId);
+  renderActiveSlots();
+  await pushSlot(slotNum, slotData.profile.name);
+}
+
+async function pushSlot(slotNum, name) {
+  setStatus(`Writing ${name} to slot ${slotNum} and switching...`);
+  toast(`Writing ${name} to slot ${slotNum} (about 15 s)...`, 'info');
+  try {
+    const res = await fetch('/api/push-slot', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ boot_id: currentBoot, slot: slotNum })
+    });
+    const data = await res.json();
+    reportPush(data, `Active: ${name} (slot ${slotNum})`);
+  } catch (e) {
+    toast('Push failed: ' + e.message, 'error');
+    setStatus('Push failed');
+  }
+}
+
+function reportPush(data, okStatus) {
+  if (data.success) {
+    if (typeof data.active_slot === 'number') activeSlot = data.active_slot;
     renderActiveSlots();
-    // Switch profile AND push DPI+buttons to mouse
-    setStatus('Switching to ' + slotData.profile.name + '...');
-    await switchSlot(slotNum - 1);
-    // Also push this profile's settings
-    try {
-      const res = await fetch('/api/import-to-mouse', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ profile_id: profileId })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setStatus('Active: ' + slotData.profile.name);
-      }
-    } catch(e) {}
+    const skipped = (data.unsupported || []).length;
+    toast(data.message + (skipped ? ` (${skipped} binding(s) not encodable, kept previous)` : ''), skipped ? 'info' : 'success');
+    setStatus(okStatus);
+    if (skipped) console.warn('unsupported bindings:', data.unsupported);
+  } else {
+    toast(data.error || 'Push failed', 'error');
+    setStatus('Push failed: ' + (data.error || ''));
   }
 }
 
@@ -1272,9 +1296,8 @@ async function createNewProfile() {
     },
   });
   await loadStored();
-  if (result && result.id) {
-    selectStoredProfile(result.id);
-  }
+  const created = result && (result.profile || result);
+  if (created && created.id) selectStoredProfile(created.id);
   setStatus('Ready');
   toast('Profile created', 'success');
 }
@@ -1283,9 +1306,8 @@ async function duplicateProfile(profileId) {
   setStatus('Duplicating...');
   const result = await apiFetch('POST', `/stored/${profileId}/duplicate`);
   await loadStored();
-  if (result && result.id) {
-    selectStoredProfile(result.id);
-  }
+  const dup = result && (result.profile || result);
+  if (dup && dup.id) selectStoredProfile(dup.id);
   setStatus('Ready');
   toast('Profile duplicated', 'success');
 }
@@ -1315,22 +1337,6 @@ function exportAll() {
 
 let activeSlot = -1;
 
-function highlightActiveSlot(slot) {
-  activeSlot = slot;
-  const btns = document.querySelectorAll('#profile-slots button');
-  btns.forEach((btn, i) => {
-    if (i === slot) {
-      btn.style.background = 'var(--green-dim)';
-      btn.style.borderColor = 'var(--green)';
-      btn.style.color = 'var(--green-txt)';
-    } else {
-      btn.style.background = '';
-      btn.style.borderColor = '';
-      btn.style.color = '';
-    }
-  });
-}
-
 function refreshActiveSlot() {
   // Don't poll dongle — track locally
 }
@@ -1344,7 +1350,8 @@ async function switchSlot(slot) {
     if (data.success) {
       toast(data.message || 'Switched!', 'success');
       setStatus(`Active: Profile ${slot + 1}`);
-      highlightActiveSlot(slot);
+      activeSlot = slot;
+      renderActiveSlots();
     } else {
       toast(data.error || 'Switch failed', 'error');
       setStatus('Switch failed');
@@ -1380,24 +1387,37 @@ async function pushToMouse() {
   if (!selectedProfileId) { toast('Select a profile first', 'error'); return; }
   const profile = storedProfiles.find(p => p.id === selectedProfileId);
   if (!profile) { toast('Profile not found', 'error'); return; }
+  const assigned = activeSlots.filter(s => s.profile && s.profile.id === selectedProfileId).map(s => s.slot);
+  if (!assigned.length) { toast('Drag this profile onto an onboard slot (1-5) first', 'error'); return; }
 
-  setStatus(`Pushing ${profile.name} to mouse...`);
-  toast(`Pushing ${profile.name} (takes ~10 seconds)...`, 'info');
-
+  setStatus(`Writing ${profile.name} to slot ${assigned.join(', ')}...`);
+  toast(`Writing ${profile.name} (about 15 s per slot)...`, 'info');
   try {
     const res = await fetch('/api/import-to-mouse', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ profile_id: selectedProfileId })
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ boot_id: currentBoot, profile_id: selectedProfileId })
     });
     const data = await res.json();
-    if (data.success) {
-      toast(data.message || 'Written to mouse!', 'success');
-      setStatus('Profile written to mouse');
-    } else {
-      toast(data.error || 'Write failed', 'error');
-      setStatus('Write failed');
-    }
+    reportPush(data, `${profile.name} written to slot ${assigned.join(', ')}`);
+  } catch (e) {
+    toast('Write failed: ' + e.message, 'error');
+    setStatus('Write failed');
+  }
+}
+
+async function pushAllSlots() {
+  const filled = activeSlots.filter(s => s.profile);
+  if (!filled.length) { toast('No profiles assigned to slots', 'error'); return; }
+  if (!confirm(`Write ${filled.length} profile(s) to the mouse? About 15 s per slot.`)) return;
+  setStatus(`Writing ${filled.length} slots...`);
+  toast(`Writing ${filled.length} slots (about ${15 * filled.length} s)...`, 'info');
+  try {
+    const res = await fetch('/api/import-to-mouse', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ boot_id: currentBoot })
+    });
+    const data = await res.json();
+    reportPush(data, 'All assigned slots written');
   } catch (e) {
     toast('Write failed: ' + e.message, 'error');
     setStatus('Write failed');

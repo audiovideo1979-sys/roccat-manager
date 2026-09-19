@@ -9,18 +9,28 @@ import os
 import sys
 import re
 import io
+import threading
 import zipfile
 from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, send_file
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR      = Path(__file__).parent
+REPO_ROOT     = BASE_DIR.parent
 PROFILES_DIR  = BASE_DIR / "profiles"
 STATIC_DIR    = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
 
 STORED_FILE = PROFILES_DIR / "stored.json"
 SLOTS_FILE  = PROFILES_DIR / "slots.json"
+MOUSE_CONFIG_FILE = PROFILES_DIR / "mouse_config.json"
+
+# kone_xp_air (protocol + transports) lives at the repo root, next to this folder
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from kone_xp_air import protocol as kxp_protocol, actions as kxp_actions, datfile as kxp_datfile  # noqa: E402
+from kone_xp_air.session import KoneXPAir  # noqa: E402
+from kone_xp_air.transport import make_transport, TransportError, is_swarm_running, format_results, kill_swarm  # noqa: E402
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder=str(STATIC_DIR), template_folder=str(TEMPLATES_DIR))
@@ -94,6 +104,10 @@ def index():
 @app.route("/static/<path:filename>")
 def static_files(filename):
     return send_from_directory(str(STATIC_DIR), filename)
+
+@app.route("/favicon.ico")
+def favicon():
+    return ("", 204)
 
 # ── Routes — Stored Profiles ─────────────────────────────────────────────────
 @app.route("/api/stored", methods=["GET"])
@@ -234,130 +248,256 @@ def export_all_dat(boot_id):
     return send_file(buf, mimetype="application/zip", as_attachment=True,
                      download_name=f"{boot_id}_profiles.zip")
 
-# ── Routes — Import to Mouse ──────────────────────────────────────────────────
-SWARM_SETTING_DIR = Path(os.environ.get("APPDATA", "")) / "Turtle Beach" / "Swarm II" / "Setting"
-ONBOARD_FILE = SWARM_SETTING_DIR / "KONE_XP_AIR_Profile_Mgr.dat"
+# ── Mouse access (kone_xp_air) ───────────────────────────────────────────────
+DEFAULT_MOUSE_CONFIG = {
+    "transport": "frida",      # "frida" = through Swarm II's own handle (known good); "direct" = our own handle
+    "backend": "dll",          # direct only: "dll" (Swarm's bundled hidapi, proven for DPI) or "hid"
+    "path": None,              # direct only: HID path; None = dongle PID 0x5017, usage page 0xff03
+    "activate_b5": 1,          # byte 5 of the 0x4e activate packet: 1 (working replay) or "slot"
+    "header_mode": "zero",     # button block header: "zero" (working capture) or "dat" (07 7d 00)
+    "wait_handle_s": 8,        # frida only: how long to wait for Swarm's handle
+    "kill_swarm": False,       # direct only: stop Swarm II + Device Service before opening the receiver
+    "preamble": False,         # direct only: send the SignalRGB receiver-init sequence first (A/B variant D)
+}
+
+MOUSE_LOCK = threading.Lock()   # HID sequences must never interleave
+LAST_MOUSE_LOG = []
+
+
+def load_mouse_config():
+    cfg = dict(DEFAULT_MOUSE_CONFIG)
+    cfg.update(load_json(MOUSE_CONFIG_FILE) or {})
+    return cfg
+
+
+def save_mouse_config(cfg):
+    save_json(MOUSE_CONFIG_FILE, cfg)
+
+
+def _log(msg):
+    LAST_MOUSE_LOG.append(msg)
+    del LAST_MOUSE_LOG[:-400]
+
+
+def open_mouse(cfg=None):
+    """A KoneXPAir session on the configured transport. Caller holds MOUSE_LOCK and closes it."""
+    cfg = cfg or load_mouse_config()
+    kind = cfg.get("transport", "frida")
+    if kind == "direct":
+        path = cfg.get("path")
+        if cfg.get("kill_swarm"):
+            kill_swarm()
+        t = make_transport("direct", path=path.encode() if isinstance(path, str) else path,
+                           backend=cfg.get("backend", "dll"), log=_log)
+    elif kind == "recording":
+        t = make_transport("recording")
+    else:
+        t = make_transport("frida", wait_handle_s=float(cfg.get("wait_handle_s", 8)), log=_log)
+    b5 = cfg.get("activate_b5", 1)
+    return KoneXPAir(t, activate_b5=b5 if b5 == "slot" else int(b5),
+                     header_mode=cfg.get("header_mode", "zero"),
+                     preamble=bool(cfg.get("preamble")) and kind == "direct", log=_log)
+
+
+def run_mouse_job(fn):
+    """Run fn(mouse) under the lock, translating errors into a JSON-able result."""
+    if not MOUSE_LOCK.acquire(timeout=0.5):
+        return {"success": False, "error": "another mouse operation is still running"}
+    try:
+        del LAST_MOUSE_LOG[:]
+        mouse = open_mouse()
+        try:
+            out = fn(mouse)
+        finally:
+            mouse.transport.close()
+        out.setdefault("success", True)
+        return out
+    except TransportError as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:  # keep the UI informative
+        return {"success": False, "error": "%s: %s" % (type(e).__name__, e)}
+    finally:
+        MOUSE_LOCK.release()
+
+
+def profile_for_push(profile):
+    """Only the fields the mouse needs; DPI as stored (single int, or dpi_stages if present)."""
+    dpi = profile.get("dpi_stages") or profile.get("dpi", 800)
+    return {"name": profile.get("name", ""), "dpi": dpi,
+            "keybinds": profile.get("keybinds") or {}, "easy_shift": profile.get("easy_shift") or {}}
+
+
+def slot_assignments(boot_id):
+    """[(slot_index, profile_dict), ...] for every assigned slot of a boot."""
+    slots = load_slots().get(boot_id, [None] * 5)
+    prof_map = {p["id"]: p for p in load_stored()}
+    return [(i, prof_map[pid]) for i, pid in enumerate(slots) if pid and pid in prof_map]
+
+
+@app.route("/api/mouse/status", methods=["GET"])
+def mouse_status():
+    cfg = load_mouse_config()
+    info = {"success": True, "config": cfg, "swarm_running": None, "receiver_found": None, "log": LAST_MOUSE_LOG[-60:]}
+    try:
+        info["swarm_running"] = is_swarm_running()
+    except Exception:
+        pass
+    try:
+        from kone_xp_air.transport import find_dongle_path
+        info["receiver_found"] = find_dongle_path() is not None
+    except Exception as e:
+        info["receiver_error"] = str(e)
+    return jsonify(info)
+
+
+@app.route("/api/mouse/config", methods=["GET", "PUT"])
+def mouse_config():
+    if request.method == "GET":
+        return jsonify({"success": True, "config": load_mouse_config()})
+    body = request.get_json() or {}
+    cfg = load_mouse_config()
+    for key in DEFAULT_MOUSE_CONFIG:
+        if key in body:
+            cfg[key] = body[key]
+    if cfg.get("transport") not in ("frida", "direct", "recording"):
+        return jsonify({"success": False, "error": "transport must be frida or direct"}), 400
+    save_mouse_config(cfg)
+    return jsonify({"success": True, "config": cfg})
+
+
+@app.route("/api/mouse/log", methods=["GET"])
+def mouse_log():
+    return jsonify({"success": True, "log": LAST_MOUSE_LOG})
+
+
+@app.route("/api/actions", methods=["GET"])
+def list_actions():
+    """Action names the encoder can put on the wire (hotkeys are 'Hotkey <mods>+<Key>')."""
+    return jsonify({"success": True, "actions": kxp_actions.all_action_names(),
+                    "keys": sorted(kxp_actions.HID_KEYS.keys()), "modifiers": list(kxp_actions.MODIFIER_BITS.keys())})
+
+
+@app.route("/api/push-slot", methods=["POST"])
+def push_slot():
+    """Push the profile assigned to one onboard slot and leave the mouse on that slot.
+    body: {boot_id, slot (1-5)}"""
+    body = request.get_json() or {}
+    boot_id = body.get("boot_id", "boot1")
+    slot = int(body.get("slot", 0))
+    if not 1 <= slot <= 5:
+        return jsonify({"success": False, "error": "slot must be 1-5"}), 400
+    assigned = dict(slot_assignments(boot_id))
+    if slot - 1 not in assigned:
+        return jsonify({"success": False, "error": "slot %d has no profile assigned" % slot}), 400
+    profile = assigned[slot - 1]
+
+    def job(mouse):
+        summary = mouse.push_profile(slot - 1, profile_for_push(profile))
+        return {"message": "Pushed %s to slot %d" % (profile["name"], slot), "pushed": [summary],
+                "active_slot": slot - 1, "unsupported": summary["unsupported"]}
+    return jsonify(run_mouse_job(job))
+
 
 @app.route("/api/import-to-mouse", methods=["POST"])
 def import_to_mouse():
-    """Push DPI + buttons to mouse via Frida. Swarm stays running."""
-    try:
-        from frida_inject import push_profile as do_push
+    """Push profiles to the mouse.
+    body: {boot_id, profile_id}  -> push that profile to every slot it is assigned to in boot_id
+          {boot_id}              -> push every assigned slot, then return to the first assigned slot
+          {boot_id, restore_slot}-> ... and return to that slot (1-5) instead"""
+    body = request.get_json() or {}
+    boot_id = body.get("boot_id", "boot1")
+    profile_id = body.get("profile_id")
+    assignments = slot_assignments(boot_id)
+    if profile_id:
+        assignments = [(i, p) for i, p in assignments if p["id"] == profile_id]
+        if not assignments:
+            return jsonify({"success": False, "error": "Assign this profile to an onboard slot (drag it onto 1-5) before pushing"}), 400
+    if not assignments:
+        return jsonify({"success": False, "error": "No profiles assigned to slots for %s" % boot_id}), 400
+    restore = body.get("restore_slot")
+    restore_slot = int(restore) - 1 if restore else (assignments[0][0] if len(assignments) > 1 else None)
 
-        body = request.get_json() or {}
-        profile_id = body.get("profile_id")
-        boot_id = body.get("boot_id", "boot1")
-
-        # If profile_id given, push that profile
-        if profile_id:
-            profiles = load_stored()
-            profile = next((p for p in profiles if p["id"] == profile_id), None)
-            if not profile:
-                return jsonify({"success": False, "error": "Profile not found"}), 404
-            result = do_push(
-                dpi=profile.get('dpi', 800),
-                keybinds=profile.get('keybinds', {}),
-                easy_shift=profile.get('easy_shift', {}),
-            )
-            return jsonify(result)
-
-        # Otherwise push all slot profiles
-        slots_data = load_slots()
-        boot_slots = slots_data.get(boot_id, [None]*5)
-        profiles = load_stored()
-        prof_map = {p["id"]: p for p in profiles}
-
-        pushed = []
-        for i, pid in enumerate(boot_slots):
-            if pid and pid in prof_map:
-                p = prof_map[pid]
-                result = do_push(
-                    dpi=p.get('dpi', 800),
-                    keybinds=p.get('keybinds', {}),
-                    easy_shift=p.get('easy_shift', {}),
-                )
-                pushed.append(p['name'])
-
-        if pushed:
-            return jsonify({"success": True, "message": f"Pushed: {', '.join(pushed)}"})
-        else:
-            return jsonify({"success": False, "error": "No profiles in slots"})
-
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/api/write-buttons", methods=["POST"])
-def write_buttons_to_mouse():
-    """Write button mappings to mouse via Frida injection into Swarm II."""
-    try:
-        from frida_inject import inject_buttons
-
-        body = request.get_json() or {}
-        profile_id = body.get("profile_id")
-
-        keybinds = None
-        easy_shift = None
-        if profile_id:
-            profiles = load_stored()
-            profile = next((p for p in profiles if p["id"] == profile_id), None)
-            if profile:
-                keybinds = profile.get("keybinds", {})
-                easy_shift = profile.get("easy_shift", {})
-
-        from frida_inject import push_profile
-        result = push_profile(keybinds=keybinds, easy_shift=easy_shift)
-        return jsonify(result)
-
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/api/profiles/live", methods=["GET"])
-def get_live_profiles():
-    """Read all 5 profiles directly from Swarm II's memory. Always accurate."""
-    try:
-        from frida_inject import read_profiles
-        result = read_profiles()
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/api/active-slot", methods=["GET"])
-def get_active_slot():
-    """Read which profile slot is currently active on the mouse."""
-    try:
-        import hid as pyhid
-        dev = pyhid.device()
-        for d in pyhid.enumerate(0x10F5, 0x5017):
-            if d['usage_page'] == 0xFF03:
-                dev.open_path(d['path'])
-                break
-        dev.set_nonblocking(1)
-        r = dev.get_feature_report(0x06, 40)
-        dev.close()
-        active_slot = r[5] if len(r) > 5 else 0
-        return jsonify({"success": True, "active_slot": active_slot})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e), "active_slot": 0})
+    def job(mouse):
+        pushed = mouse.push_slots([(i, profile_for_push(p)) for i, p in assignments], restore_slot=restore_slot)
+        names = ", ".join("%s->%d" % (s["name"], s["slot"] + 1) for s in pushed)
+        unsupported = [u for s in pushed for u in s["unsupported"]]
+        return {"message": "Pushed " + names, "pushed": pushed,
+                "active_slot": restore_slot if restore_slot is not None else pushed[-1]["slot"],
+                "unsupported": unsupported}
+    return jsonify(run_mouse_job(job))
 
 
 @app.route("/api/switch-profile/<int:slot>", methods=["POST"])
 def switch_profile(slot):
-    """Switch the mouse to a different onboard profile slot (0-4). Uses Frida — Swarm stays running."""
-    try:
-        from frida_inject import switch_profile as do_switch
-        if slot < 0 or slot > 4:
-            return jsonify({"success": False, "error": "Slot must be 0-4"}), 400
+    """Switch the mouse to onboard slot 0-4 (no writes)."""
+    if slot < 0 or slot > 4:
+        return jsonify({"success": False, "error": "Slot must be 0-4"}), 400
 
-        result = do_switch(slot)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    def job(mouse):
+        mouse.switch_profile(slot)
+        return {"message": "Switched to profile %d" % (slot + 1), "active_slot": slot}
+    return jsonify(run_mouse_job(job))
 
 
-# ── Routes — Live Swarm II INI Profiles ──────────────────────────────────────
+@app.route("/api/mouse/read-pages", methods=["POST"])
+def read_pages():
+    """Raw page read-back for diagnostics. body: {cmd: 'buttons'|'profile', flag: 0|1}"""
+    body = request.get_json() or {}
+    cmd = kxp_protocol.CMD_BUTTONS if body.get("cmd") == "buttons" else kxp_protocol.CMD_PROFILE
+    flag = int(body.get("flag", 1))
+
+    def job(mouse):
+        pages = mouse.read_raw_pages(cmd, flag, int(body.get("count", 5)))
+        return {"pages": [p.hex(" ") for p in pages], "log": format_results(mouse.last_results)}
+    return jsonify(run_mouse_job(job))
+
+
+# ── Routes — Import Swarm II exports (.dat) ─────────────────────────────────
+SWARM_SETTING_DIR = Path(os.environ.get("APPDATA", "")) / "Turtle Beach" / "Swarm II" / "Setting"
+ONBOARD_FILE = SWARM_SETTING_DIR / "KONE_XP_AIR_Profile_Mgr.dat"
+
+
+@app.route("/api/import-dat", methods=["POST"])
+def import_dat():
+    """Create/refresh stored profiles from a Swarm II .dat export (multipart 'file') or from the
+    onboard container in %APPDATA% (body {source: 'onboard'}). Names come from the .dat when it has
+    them, else from 'name' / 'names'."""
+    raw = None
+    names = []
+    if "file" in request.files:
+        raw = request.files["file"].read()
+        names = [request.form.get("name") or Path(request.files["file"].filename).stem]
+    else:
+        body = request.get_json() or {}
+        if body.get("source") == "onboard":
+            if not ONBOARD_FILE.exists():
+                return jsonify({"success": False, "error": "%s not found" % ONBOARD_FILE}), 404
+            raw = ONBOARD_FILE.read_bytes()
+            names = body.get("names") or []
+    if raw is None:
+        return jsonify({"success": False, "error": "send a .dat file or {source:'onboard'}"}), 400
+    entries = kxp_datfile.read_profiles(raw)
+    if not entries:
+        return jsonify({"success": False, "error": "no Kone XP Air profile blocks found in that file"}), 400
+    profiles = load_stored()
+    created, updated = [], []
+    for i, e in enumerate(entries):
+        name = names[i] if i < len(names) and names[i] else "Imported %d" % (i + 1)
+        sp = kxp_datfile.to_stored_profile(e, name)
+        existing = next((p for p in profiles if p.get("name") == name), None)
+        if existing:
+            existing.update({k: sp[k] for k in ("dpi", "dpi_stages", "keybinds", "easy_shift")})
+            updated.append(name)
+        else:
+            sp["id"] = make_id(name)
+            profiles.append(sp)
+            created.append(name)
+    save_stored(profiles)
+    return jsonify({"success": True, "created": created, "updated": updated,
+                    "checksums_ok": [e.get("button_checksum_ok") for e in entries]})
+
+
+# ── Routes — Live Swarm II INI Profiles (legacy, kept for the Sync button) ───
 @app.route("/api/swarm/profiles", methods=["GET"])
 def get_swarm_profiles():
     """Read live profile data from Swarm II's INI file."""
@@ -367,173 +507,6 @@ def get_swarm_profiles():
         return jsonify({"success": True, "profiles": profiles})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route("/api/swarm/dpi/<int:profile_idx>", methods=["PUT"])
-def set_swarm_dpi(profile_idx):
-    """Write DPI values to Swarm II INI for a specific profile."""
-    try:
-        from swarm_ini import write_dpi_to_ini
-        body = request.get_json()
-        dpi_values = body.get("dpi_values", [])
-        if len(dpi_values) != 5:
-            return jsonify({"error": "Need exactly 5 DPI values"}), 400
-        write_dpi_to_ini(profile_idx, dpi_values)
-        return jsonify({"success": True, "message": f"DPI updated for profile {profile_idx}. Restart Swarm II without dongle to apply."})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route("/api/swarm/sync", methods=["POST"])
-def sync_from_swarm():
-    """Import current Swarm II profiles into ROCCAT Manager's stored profiles."""
-    try:
-        from swarm_ini import read_profiles_from_ini
-
-        ini_profiles = read_profiles_from_ini()
-        profiles = load_stored()
-
-        # Translate Swarm II internal names to our UI names
-        NAME_MAP = {
-            'Click': 'Left Click',
-            'Menu': 'Right Click',
-            'Universal Scroll': 'Middle Click',
-            'Browser Forward': 'Browser Forward',
-            'Browser Backward': 'Browser Back',
-            'Scroll Up': 'Scroll Up',
-            'Scroll Down': 'Scroll Down',
-            'Tilt Left': 'Tilt Left',
-            'Tilt Right': 'Tilt Right',
-            'Double-Click': 'Double-Click',
-            'DPI Up': 'DPI Up',
-            'DPI Down': 'DPI Down',
-            'DPI Cycle Up': 'DPI Cycle Up',
-            'DPI Cycle Down': 'DPI Cycle Down',
-            'Easy Shift': 'Easy Shift',
-            'Disabled': 'Disabled',
-            'Insert': 'Insert',
-            'Delete': 'Delete',
-            'Home': 'Home',
-            'End': 'End',
-            'Page Up': 'Page Up',
-            'Page Down': 'Page Down',
-        }
-
-        def translate_name(entry):
-            """Convert an INI button entry to a UI-friendly name."""
-            name = entry['name']
-            if entry['type'] == 'keyboard':
-                return f"Hotkey {name}"
-            if entry['type'] == 'disabled' or name == 'Disabled':
-                return 'Disabled'
-            if entry['type'] in ('easyshift_func', 'profile', 'raw'):
-                return 'Disabled'  # entries we can't map yet
-            if name == 'Standard(0x61)':
-                return 'Tilt Left'
-            if name == 'Standard(0x62)':
-                return 'Tilt Right'
-            if name.startswith('Standard(') or name.startswith('Scroll(') or name.startswith('Profile('):
-                return 'Disabled'  # unknown codes
-            if name.startswith('ES(0x61)'):
-                return 'Prev Track'
-            if name.startswith('ES(0x62)'):
-                return 'Next Track'
-            if name.startswith('ES(0x04)'):
-                return 'Disabled'
-            if name.startswith('ES('):
-                return 'Disabled'
-            return NAME_MAP.get(name, name)
-
-        # Swarm II profile names (hardcoded order for now)
-        swarm_names = ["WWM", "Main Test", "Grounded", "Default Profile 03", "Default Profile 05"]
-
-        for i, ip in enumerate(ini_profiles):
-            if 'dpi' not in ip or 'dpi_x' not in ip.get('dpi', {}):
-                continue
-
-            name = swarm_names[i] if i < len(swarm_names) else f"Profile {i+1}"
-            dpi = ip['dpi']['dpi_x'][ip['dpi'].get('active_dpi_stage', 0)] if ip['dpi']['dpi_x'] else 800
-
-            keybinds = dict(DEFAULT_KEYBINDS)
-            easy_shift = dict(DEFAULT_EASYSHIFT)
-
-            if 'buttons' in ip:
-                entries = ip['buttons']['entries']
-
-                # Primary layer button slot mapping (entry index -> button name)
-                # Order confirmed by cross-referencing Swarm II button assignments
-                btn_map = [
-                    'left_button', 'right_button', 'middle_button',  # 0-2: buttons 1-3
-                    'scroll_up', 'scroll_down',                       # 3-4: buttons 4-5
-                    'side_button_1', 'side_button_2',                 # 5-6: buttons 10-11
-                    'dpi_up', 'dpi_down',                             # 7-8: buttons 8-9
-                    'thumb_button_1', 'thumb_button_2',               # 9-10: buttons 12-13
-                    'tilt_left', 'tilt_right',                        # 11-12: buttons 6-7 (0x61/0x62 = default)
-                    'easy_shift', None,                               # 13-14: button 14, profile switch
-                ]
-
-                # Easy Shift layer button slot mapping (starting at entry 15)
-                es_btn_map = [
-                    'left_button', 'right_button',
-                    'middle_button',
-                    'tilt_left', 'tilt_right',
-                    'side_button_1', 'side_button_2',
-                    'dpi_up', 'dpi_down',
-                    'thumb_button_1', 'thumb_button_2',
-                    'scroll_up', 'scroll_down',
-                ]
-
-                for j, entry in enumerate(entries):
-                    translated = translate_name(entry)
-                    if j < len(btn_map) and btn_map[j]:
-                        keybinds[btn_map[j]] = translated
-                    elif j >= 15 and j - 15 < len(es_btn_map) and es_btn_map[j - 15]:
-                        easy_shift[es_btn_map[j - 15]] = translated
-
-            # Find or create profile
-            # Only sync button mappings — don't overwrite DPI (user sets that in our UI)
-            existing = next((p for p in profiles if p.get('name') == name), None)
-            if existing:
-                existing['keybinds'] = keybinds
-                existing['easy_shift'] = easy_shift
-            else:
-                profiles.append({
-                    'id': make_id(name),
-                    'name': name,
-                    'color': '#888780',
-                    'dpi': dpi,
-                    'keybinds': keybinds,
-                    'easy_shift': easy_shift,
-                })
-
-        save_stored(profiles)
-        return jsonify({"success": True, "message": f"Synced {len(ini_profiles)} profiles from Swarm II"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-def restart_swarm():
-    """Kill and restart SWARM II."""
-    import subprocess
-    swarm_paths = [
-        r"C:\Program Files\Turtle Beach Swarm II\Turtle Beach Swarm II.exe",
-    ]
-    # Kill SWARM
-    try:
-        subprocess.run(["taskkill", "/f", "/im", "Turtle Beach Swarm II.exe"], capture_output=True, timeout=5)
-    except:
-        pass
-
-    import time
-    time.sleep(1)
-
-    # Restart
-    for path in swarm_paths:
-        if os.path.exists(path):
-            try:
-                subprocess.Popen([path])
-                return f"SWARM II restarted from {path}"
-            except:
-                pass
-    return "Could not restart SWARM II automatically. Please restart it manually."
 
 
 # ── Launch ────────────────────────────────────────────────────────────────────

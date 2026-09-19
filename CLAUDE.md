@@ -1,91 +1,61 @@
-# ROCCAT Manager Full — Claude Code Instructions
+# ROCCAT Manager — Claude Code Instructions
 
-## On Session Start
-1. Read `HANDOFF.md` for current state and pending tasks
-2. Check `CHANGELOG.txt` for the latest @N version number — continue from there
+## On session start
+1. Read `HANDOFF.md` (state, open questions, the protocol reference).
+2. `CHANGELOG.txt` has the latest @N — continue from there.
+3. Run `python -m pytest -q tests` — 88 tests, no hardware needed. Keep it green.
 
-## Project Basics
-- **What it is:** Custom web UI to manage ROCCAT Kone XP Air mouse profiles without opening SWARM II
-- **Web app:** `ROCCAT_Manager/server.py` (Flask, port 5555) + SPA frontend in `ROCCAT_Manager/templates/`
-- **Run server:** `ROCCAT_Manager/Launch.bat` or `python ROCCAT_Manager/server.py`
-- **Working directory:** `C:\Projects Folder\ROCCAT_Manager_Full\`
-- **Git:** Own repo — `https://github.com/audiovideo1979-sys/roccat-manager`
-- **Push:** `cd "C:\Projects Folder\ROCCAT_Manager_Full" && git add -A && git commit -m "..." && git push`
+## What it is
+Web UI (Flask, port 5555) that manages the five onboard profiles of a ROCCAT Kone XP Air (DPI, button
+layout, Easy-Shift layer) without opening Turtle Beach Swarm II. Windows 11, dual boot; the mouse is on
+its USB receiver (VID 0x10F5, receiver PID 0x5017).
 
-## Rules
-- **Always update CHANGELOG.txt** after every change with the next @N version number
-- **Always update HANDOFF.md** at the end of each session
-- **No .env file** — no secrets/credentials in this project
+## Layout
+- `kone_xp_air/` — the protocol. `protocol.py` packets + blocks + checksums, `actions.py` names <-> wire
+  codes, `sequences.py` op lists that reproduce the captured Swarm traffic, `transport.py`
+  (RecordingTransport for tests, DirectHidTransport, FridaTransport + `frida_executor.js`),
+  `session.py` (`KoneXPAir`), `datfile.py` (.dat exports).
+- `ROCCAT_Manager/server.py` — Flask API; `templates/index.html` — single-file SPA;
+  `profiles/stored.json` (profile library), `profiles/slots.json` (boot1/boot2 -> 5 profile ids),
+  `profiles/mouse_config.json` (transport + protocol options).
+- `tools/` — Windows-only diagnostics (see `RUN_ON_PC.md`). `tests/` — pytest.
+- Root `*.py` / `*.js` from March–April 2026 are experiment history (superseded, kept for reference).
+  `ROCCAT_Manager/SWARM_II_DAT_FORMAT.py`, `profile_mgr_format.py`, `dat_export.py`, `swarm_ini.py`,
+  `automation/` are legacy and not on the push path.
 
-## Architecture
-- `ROCCAT_Manager/server.py` — Flask backend, all REST API routes, profile CRUD, .dat export/import
-- `ROCCAT_Manager/templates/index.html` — Single-file SPA (dark theme, no framework)
-- `ROCCAT_Manager/profiles/` — JSON data files (boot1.json, boot2.json, slots.json, stored.json) + .dat exports
-- `ROCCAT_Manager/automation/roccat_automation.py` — pywinauto driver for SWARM II (⚠️ stubs need calibration)
-- `ROCCAT_Manager/SWARM_II_DAT_FORMAT.py` — Reverse-engineered single-profile .dat parser/writer
-- `ROCCAT_Manager/profile_mgr_format.py` — Multi-profile container .dat format
-- `ROCCAT_Manager/dat_export.py` — JSON → .dat converter + keybind action mapper
-- Root `hid_*.py` files — HID protocol experiments (not integrated into main app)
-
-## Data Model
-- `boot1.json` / `boot2.json` — 5 profiles per boot, each with: name, color, polling_rate, dpi (5 stages + active), keybinds (11 buttons), easy_shift (11 buttons)
-- `slots.json` — maps profile IDs to onboard slot numbers per boot
-- `stored.json` — library of all available profiles for slot assignment
-- `job_config` equivalent = `profiles/*.json` (no job_config.json in this project)
+## Run
+- `ROCCAT_Manager/Launch.bat` or `python ROCCAT_Manager/server.py` (opens http://localhost:5555).
+- Transport "Frida" (default) needs Swarm II running (tray is fine). "Direct" needs nothing but the
+  receiver — switch to it once `tools/ab_test_buttons.py` shows it works.
+- Deps: `pip install flask frida hidapi pytest`. 64-bit Python (matches `KONE_XP_AIR.dll`).
 
 ## REST API (port 5555)
 | Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Serve UI |
-| `GET` | `/api/stored` | List stored profiles |
-| `POST` | `/api/stored` | Create profile |
-| `PUT` | `/api/stored/{id}` | Update profile |
-| `DELETE` | `/api/stored/{id}` | Delete profile |
-| `POST` | `/api/stored/{id}/duplicate` | Duplicate profile |
-| `GET` | `/api/slots/{boot_id}` | Get slot assignments |
-| `PUT` | `/api/slots/{boot_id}/{slot}` | Assign profile to slot |
-| `GET` | `/api/export/{id}` | Download single profile as .dat |
-| `GET` | `/api/export-all/{boot_id}` | Download all profiles as .zip |
-| `POST` | `/api/import-to-mouse/{boot_id}` | Write profiles to SWARM II onboard file |
+|---|---|---|
+| GET/POST | `/api/stored`, PUT/DELETE `/api/stored/{id}`, POST `/api/stored/{id}/duplicate` | profile library |
+| GET | `/api/slots/{boot}`, PUT `/api/slots/{boot}/{n}` | slot assignments |
+| POST | `/api/push-slot` `{boot_id, slot 1-5}` | write that slot's profile, leave the mouse on it |
+| POST | `/api/import-to-mouse` `{boot_id[, profile_id][, restore_slot]}` | push one profile to its slot(s), or every assigned slot |
+| POST | `/api/switch-profile/{0-4}` | switch only |
+| GET/PUT | `/api/mouse/config`, GET `/api/mouse/status`, GET `/api/mouse/log` | transport + options, presence, last HID log |
+| POST | `/api/mouse/read-pages` `{cmd, flag}` | raw page read-back (diagnostics) |
+| POST | `/api/import-dat` (file or `{source:'onboard'}`) | stored profiles from Swarm exports |
+| GET | `/api/export/{id}`, `/api/export-all/{boot}` | legacy .dat export (zero checksums) |
+| GET | `/api/actions` | names the encoder supports |
 
-## HID Protocol Research (WIP)
-Direct HID bypass to avoid SWARM II entirely — **not working yet**, needs USB capture from Boot 2.
+## Rules
+- Every packet or block change gets a test that pins it to a capture (`tests/test_sequences.py`,
+  `tests/test_datfile.py`). Never "fix" bytes by reasoning alone — the April session lost days that way.
+- Direct and Frida transports must execute the same op list; add behaviour in `sequences.py`, not in a
+  transport.
+- Update `CHANGELOG.txt` (next @N) and `HANDOFF.md` at the end of every session. No secrets, no .env.
+- Hardware findings go into HANDOFF.md "What is established" only after they were seen on the mouse.
 
-**Key findings:**
-- Dongle (PID 0x5017) is the command gateway, NOT the mouse
-- Mouse IF=1 (UP=0xFF00) is the write channel (accepts output reports)
-- SWARM II cycles through all 5 profiles for LED animation via dongle report 0x06
-- Kone Pro (same generation) uses SET_REPORT control transfers with 69-byte settings blob
-- All standard write methods tried (hidapi, pyusb, ctypes) update report cache but don't change actual mouse behavior
-- **Next step:** USB packet capture on Boot 2 to see exact write protocol
+## Protocol in one paragraph
+Feature report 0x06, 30 bytes, byte 1 = 0x01 (mouse via receiver). 0x46 = profile block (75 B, 3 pages,
+DPI), 0x47 = button block (125 B, 5 pages: 3-byte header, 30 entries `[00, key, code|mods, type]`,
+sum16), 0x45 select + 0x4e activate = profile switch, `06 01 44 07` + get_feature after every write.
+Full tables in HANDOFF.md and `kone_xp_air/protocol.py`.
 
-**Useful tools (root directory):**
-- `hid_spy.py` — Real-time HID report monitor (run while changing settings in SWARM II)
-- `hid_brute_write.py` — Tests every write method on every interface
-- `hid_dongle_write.py` — Dongle-specific write test
-- `ctypes_hid_write.py` — Direct Windows HID API test
-
-## Automation Calibration (Alternative Approach)
-`roccat_automation.py` has placeholder control names that need to be mapped to actual SWARM II UI controls:
-1. Install deps: `pip install pywinauto pywin32`
-2. Open SWARM II, navigate to Kone XP Air main screen
-3. Run: `python ROCCAT_Manager/automation/roccat_automation.py`
-4. This writes `inspector_output.txt` — send to Claude for control name mapping
-5. Update the stub names in `roccat_automation.py` with real control names
-
-## Binary .dat Format
-- Single profile: 651 bytes, UTF-16LE, blocks: `DesktopProfile`, `KoneXPAirButtons`, `KoneXPAirMain`, `ProfileColor`, `ProfileImage`, `ProfileName`
-- Multi-profile container: `KONE_XP_AIR_Profile_Mgr.dat` in `%APPDATA%\Turtle Beach\Swarm II\Setting\`
-- Full reverse-engineering done in `SWARM_II_DAT_FORMAT.py` and `profile_mgr_format.py`
-
-## Environment
-- **OS:** Windows 11, dual-boot on separate drives
-- **Mouse:** ROCCAT Kone XP Air (USB wireless, VID: 0x10F5, PID: 0x5019)
-- **SWARM II path:** `C:\Program Files\Turtle Beach Swarm II\Turtle Beach Swarm II.exe`
-- **SWARM II config:** `%APPDATA%\Turtle Beach\Swarm II\Setting\KONE_XP_AIR_Profile_Mgr.dat`
-- **AppData/ROCCAT folder:** Empty — SWARM II stores nothing locally (confirmed)
-
-## Out of Scope (per Steve)
-- RGB lighting — explicitly excluded
-- Macro recording (future)
-- Easy Shift secondary layer UI (future — currently JSON-only)
+## Out of scope (per Steve)
+RGB lighting (0x4d frames), macros, Swarm II UI automation.

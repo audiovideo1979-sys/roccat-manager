@@ -1,76 +1,142 @@
-# ROCCAT Manager Full — Handoff
+# ROCCAT Manager — Handoff
 
-## Session: 2026-03-23 (Boot 1 — Work drive)
+## Where things stand (2026-09-19)
 
-### What was done this session
-- Extensive HID protocol reverse-engineering attempt to bypass SWARM II
-- Built `hid_spy.py` — real-time HID report monitor that captured SWARM II's profile cycling
-- Discovered SWARM II communicates through the **dongle** (PID 0x5017), not directly to mouse
-- Dongle report 0x06 state machine: 0x4D (idle) → 0x46 (transitioning) → 0x44 (data loaded)
-- Mouse IF=1 (UP=0xFF00) accepts output writes — confirmed as the write channel
-- Tried every write method: hidapi feature/output reports, raw USB control transfers (pyusb), direct Windows HID API (ctypes), frida hooking — none changed actual mouse DPI
-- Installed Wireshark 4.6.4 (USBPcap driver present but non-functional on this boot)
-- Installed frida for API hooking (hooks attach but can't capture data — JS engine issues)
-- Conclusion: need proper USB packet capture (USBPcap/Wireshark) from Boot 2 to decode the actual write protocol
+**Working today:** with Swarm II running in the tray, the app writes DPI, button layouts and profile
+switches to the Kone XP Air through Swarm's own HID handle (Frida injection). That is the April 2026
+result and it still holds.
 
-### Current State
-**~90% complete.** Core app fully functional. Direct HID bypass is the remaining challenge.
+**New this session** (cloud session, no mouse attached — nothing below was run against hardware):
 
-Two approaches to push profiles to mouse:
-1. **Working:** .dat file write + SWARM II restart (already in server.py)
-2. **Not working yet:** Direct HID protocol (needs USB capture from Boot 2)
+- The protocol was re-derived from the repo's own captures and from Swarm II's `.dat` exports, and put
+  in one hardware-independent package, `kone_xp_air/`, with 88 tests that pin every packet builder to
+  the captured traffic. Decoding Swarm's exports and re-encoding them reproduces Swarm's bytes exactly,
+  checksums included.
+- The app (`ROCCAT_Manager/server.py` + `index.html`) runs on that package. Pushes now target the slot
+  you click (the old push wrote the same DPI to all five slots and the button block with no slot at
+  all — which slot received it was never recorded), and a transport switch in the sidebar picks Frida
+  or a plain HID handle.
+- Three Windows tools (`tools/`) exist to settle the one question that matters: does a plain handle work
+  for button writes when it sends *exactly* what Swarm sends? See `RUN_ON_PC.md`.
 
-### Files Modified/Created This Session
-- `hid_spy.py` — Real-time HID report monitor (MOST USEFUL — keep this)
-- `hid_dongle_write.py` — Dongle write test
-- `hid_brute_write.py` — Brute-force write test on all interfaces
-- `ctypes_hid_write.py` — Direct Windows HID API test
-- `usb_control_test.py` — Raw USB control transfer test
-- `frida_hid_hook.py`, `frida_hook2.py`, `frida_ntdll.py` — Frida API hooking attempts
-- `frida_find_dlls.py` — DLL enumeration for SWARM II processes
-- `capture_swarm.py`, `capture_elevated.ps1`, `etw_usb_capture.ps1` — USB capture scripts
-- `find_usb_iface.py`, `find_usb_iface2.py` — USBPcap interface detection
+## Why direct button writes "did not work" in April (from the code; not yet confirmed on the mouse)
 
-### Last Deploy Ref
-@2 — HID protocol research + capture tools
+Commit f90cb9c concluded "opening a new handle doesn't work — must use Swarm's existing handle". The two
+experiments it compared differed in far more than the handle:
 
-### Pending / Next Tasks
-1. **On Boot 2:** Run USBPcap/Wireshark capture while changing DPI in SWARM II — decode the exact USB write protocol
-2. **pywinauto calibration** — run inspector to get real SWARM II control names (alternative to HID bypass)
-3. **Configure Boot 2 profiles** with real data
-4. **Test .dat file import workflow** end-to-end
+| | direct path (`roccat_write.py`) | working path (`inject_full.js`, Frida replay that reports itself as the exact capture) |
+|---|---|---|
+| block header | `07 7d <slot> 00 00` (Swarm's memory/.dat form) | `00 00 00 00 00` |
+| after the 5 pages | `06 01 49 06 03 05 cs cs` "commit" — appears in no capture | nothing |
+| activation | none | read 4 profile pages, 0x45 select + 0x4e activate to another slot, read again, back |
+| Swarm II / Device Service | killed first | alive |
+| button data | a different, mis-aligned keybind set | byte-exact capture |
 
-### Known Bugs / Issues
-- USBPcap filter driver not functional on Boot 1 (installed but "Couldn't open device")
-- Frida can't hook hid.dll exports in SWARM II (TypeError: not a function)
-- Port inconsistency: README says 5000, server.py uses 5555
+Nobody ever sent the working bytes through a plain handle. `tools/ab_test_buttons.py` does exactly that,
+in six variants (A Frida, B plain handle with Swarm alive, C Swarm killed, D + receiver init sequence from
+the SignalRGB plugin, E + `.dat`-style header, F + 0x49 commit).
 
-### Key Decisions Made
-- Direct HID protocol bypass deferred to Boot 2 (needs USB capture)
-- .dat file write + SWARM restart is the working approach for now
-- Dongle (PID 0x5017) is the command gateway, not the mouse directly
-- Mouse IF=1 (0xFF00) is the write channel, but correct command format unknown
+Bugs found on the way (all fixed in `kone_xp_air/`, the old files are left untouched):
 
-### HID Protocol Research Summary
-**Devices:**
-- Dongle: VID 0x10F5, PID 0x5017, 3 interfaces (all have IN+OUT endpoints)
-- Mouse: VID 0x10F5, PID 0x5019, 3 interfaces (IF=1 has OUT endpoint)
+- `frida_inject.py` wrote the right-button code at offset 8; the record starts at 7 and the code sits at
+  9, so every push corrupted button 2's record.
+- `frida_inject.py` push wrote one DPI to all five slots (and, because it patched byte 7 of every page,
+  clobbered two profile bytes on pages 1-2), wrote the button block with no slot, then always ended on
+  slot 0; the UI's "Push" ignored the slot you clicked.
+- `frida_inject.py` silently turned unknown actions (`Hotkey Shift`, `Hotkey Del`, `Delete`, `Page Up`,
+  `Ctrl+C` — all used in stored profiles) into Disabled.
+- `server.py` imported a function that never existed (`inject_buttons`), so `/api/write-buttons` always
+  failed; the page-load "live profiles" read overwrote stored keybinds with the mis-decoded heap copy.
+- The stored template in `roccat_write.py` carried a checksum that did not match its own bytes.
 
-**Interfaces (mouse):**
-- IF=0 UP=0xFF01 — Main config (readable reports 0x01-0x08, DPI/LED/button data)
-- IF=1 UP=0xFF00 — Write channel (accepts output reports, no readable feature reports)
-- IF=2 UP=0xFF02 — Unknown (no readable reports, rejects output writes)
+## What is established (each line is covered by a test)
 
-**Report layout (mouse 0xFF01):**
-- Report 0x01: Active profile DPI + LED color per stage
-- Report 0x02: Button/keybind config
-- Report 0x03: LED zone colors (4 zones × RGB)
-- Report 0x04/0x05: More LED data
-- Report 0x06: DPI stage config (5 stages, stable)
-- Report 0x08: Similar to 0x06
+Transport: HID feature report ID 0x06, 30 bytes, to the receiver's vendor collection (dongle PID 0x5017,
+usage page 0xFF03 — the collection the working DPI writes used). Byte 1: 0x01 = mouse, 0x00 = receiver.
 
-**Kone Pro protocol (same generation, documented):**
-- Uses USB control transfers: SET_REPORT (0x21/0x09) with wValue=0x0300|report_id
-- Report 0x04: profile select [0x04, idx, 0x80, 0x00]
-- Report 0x06: 69-byte settings blob (DPI as LE16×50, checksum in last 2 bytes)
-- Polling status via report 0x04: 1=ready, 3=busy
+| command | packet | notes |
+|---|---|---|
+| apply / handshake | `06 01 44 07`, 100 ms, `get_feature_report(0x06)`, 50 ms | after every write; response never decoded |
+| select page | `06 01 46/47 06 02 <page> <flag>` | flag 01 for profile pages, 00 for button pages |
+| write page | `06 01 46/47 06 19 <25 bytes>` | |
+| read page | `06 01 46/47 07` then get_feature_report | answers never decoded — `tools/dump_mouse_pages.py` |
+| profile select | `06 01 45 06 02 <slot> 05` | |
+| activate | `06 01 4e 06 04 01 01 01 ff` | byte 5 was the slot in `roccat_write.py`, 01 in the capture and in SignalRGB |
+| profile commit | `06 01 46 06 03 ff <sum16 of the 75 bytes>` | Swarm sends the profile colour's B there and sums 76 bytes; the mouse accepts the `ff` form |
+| 0x49 | `06 01 49 06 03 05 cs cs` | seen after profile writes in the SignalRGB capture; not in the button capture |
+
+Button block (command 0x47, 125 bytes = 5 pages): 3-byte header (`00 00 00` on the wire; `07 7d <flag>` in
+`.dat` files and Swarm's memory — the flag is not the slot), 30 four-byte entries at offset 3+4k, 16-bit
+little-endian sum of bytes 0..122 at the end. Entries k=0..14 are the 15 inputs in this order: left,
+right, middle, wheel up, wheel down, side 10, side 11, top 8 (DPI up), top 9 (DPI down), thumb 12, thumb
+13, tilt, tilt, Easy-Shift (14), profile switch (15, underside). k=15..29 are the same inputs on the
+Easy-Shift layer. Entry encoding `[00, key, code|modbits, type]`:
+
+| type | meaning | codes seen |
+|---|---|---|
+| 01 | mouse | 01 left, 02 right, 03 middle, 05 browser fwd, 06 browser back, 07/08 tilt, 09/0a wheel up/down (04 double-click from the INI table, unseen) |
+| 02 | DPI | 02 up, 03 down (01/04 cycle from the INI table, unseen) |
+| 03 | media | 04 play/pause, 07/08 volume up/down, 02/03 prev/next track |
+| 06 | keyboard | key = HID usage, modbits 01 LCtrl 02 LShift 04 LAlt 08 LWin; a lone modifier is its own usage (`e1`) with modbits 0 |
+| 08 | system | 01 profile cycle, 0b toggle RGB (Easy-Shift default of button 15) |
+| 0a | Easy-Shift | 01 |
+| 04 | unknown Swarm function (WWM.dat, Grounded.dat) | kept verbatim as `Raw 00 00 xx 04` |
+
+Profile block (command 0x46, 75 bytes = 3 pages): `06 4e <slot> 06 06 1f <active stage>`, 5 x LE16 DPI,
+5 x LE16 second DPI set, 9 config bytes, 7 x 5 LED bytes, `01 64 ff ff`. This is the `roccat_write.py`
+form proven to change DPI. Swarm's `.dat` block is the same 75 bytes + colour B + sum16(0..75); the app
+keeps the proven form. Byte 2 may be a flag rather than the slot (WWM.dat, in slot 4, has 01 there), which
+is why every push now switches to the slot first.
+
+`.dat` exports: `00 00 00 7d` + the 125-byte button block, `00 00 00 4e` + the 78-byte profile block
+(`kone_xp_air/datfile.py`; the ones this project exported earlier carry zero checksums).
+
+## Still open — in the order worth doing
+
+1. **Run `RUN_ON_PC.md`** (diag + A/B). Then:
+   - B works: set Transport to "Direct" in the sidebar; Swarm II is no longer needed for the app.
+   - only C/D work: direct works but Swarm must be closed — add a "kill Swarm first" option to
+     `open_mouse()` in `server.py` (`kone_xp_air.transport.kill_swarm`).
+   - only A works and the diag shows Swarm on a different collection: put that path in
+     `profiles/mouse_config.json` (`"path"`), rerun B.
+   - only A works on the same collection: stay on Frida (it works) and record it as a real finding.
+2. `tools/dump_mouse_pages.py`: decode the read-back so profiles come from the mouse, not Swarm's heap
+   (the old `/api/profiles/live` is gone; nothing reads the mouse today).
+3. Ten-second checks after a push: tilt left/right are named after `roccat_write.py`'s table — assign
+   something distinctive to "Tilt Left" and confirm the physical direction; the Easy-Shift media names
+   follow the factory chart and the owner's Main Test export.
+4. Persistence: after a direct push, put the mouse to sleep / re-pair and check the buttons survive.
+   If not, variant F (0x49 commit) is the candidate.
+5. Unknown wire codes: Mute (not offered any more), Swarm's type-0x04 functions, polling rate (byte 29
+   in the SignalRGB capture, bytes 3-4 in Swarm's exports — not exposed in the UI).
+6. Housekeeping: `swarm_ini.py` mis-decodes Qt's `\a \b \v` escapes (its 0x61/0x62/0x76 constants are
+   artefacts); `SWARM_II_DAT_FORMAT.py` / `dat_export.py` carry a wrong action table and write zero
+   checksums. Both are unused by the push path now; fix or delete when convenient.
+
+## Files
+
+- `kone_xp_air/` — `protocol.py` (packets, blocks, checksums), `actions.py` (names <-> codes),
+  `sequences.py` (ordered op lists = the captured traffic), `transport.py` (recording / direct / Frida),
+  `frida_executor.js` (runs an op list through Swarm's handle, identifies the handle), `session.py`
+  (`KoneXPAir`: switch, write DPI, write buttons, push slots), `datfile.py` (.dat reader).
+- `tools/` — `diag_swarm_handle.py`, `ab_test_buttons.py`, `dump_mouse_pages.py`.
+- `tests/` — `python -m pytest -q tests` (no hardware, no Windows needed).
+- `ROCCAT_Manager/server.py`, `templates/index.html`, `profiles/{stored,slots,mouse_config}.json`.
+- Root-level experiment scripts from March/April are kept as history; `frida_inject.py` and
+  `roccat_write.py` are superseded by the package.
+
+## History
+
+- 2026-03-22/23 (@1, @2): Flask app, `.dat` format, HID probing; nothing changed the mouse.
+- 2026-04-10..12 (@3, reconstructed from git — never written up): direct DPI write and profile switch
+  through `KONE_XP_AIR.dll`'s hidapi on the dongle (0xFF03); button writes over the same handle did not
+  take; byte-exact replay through Swarm's handle via Frida did; heap-scan profile reader; Frida push
+  wired into the app.
+- 2026-09-19 (@4): this session, see above.
+
+## Environment (unchanged)
+
+Windows 11 dual boot; mouse VID 0x10F5, receiver PID 0x5017, mouse PID 0x5019; Swarm II at
+`C:\Program Files\Turtle Beach Swarm II\` (`Data\Devices\KONE_XP_AIR\KONE_XP_AIR.dll` bundles the hidapi
+the app calls); onboard container `%APPDATA%\Turtle Beach\Swarm II\Setting\KONE_XP_AIR_Profile_Mgr.dat`.
+Python deps: `flask frida hidapi` (+ `pytest`).

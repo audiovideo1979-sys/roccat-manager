@@ -1,6 +1,35 @@
 ROCCAT Manager Full — Changelog
 ================================
 
+@4 — 2026-09-19 (cloud session, no hardware)
+  - kone_xp_air/: hardware-independent protocol package (packets, 125-byte button
+    block = 3 header + 30 x 4-byte entries + sum16, 75-byte profile block, action
+    table, op-list sequences reproducing the captured traffic, recording / direct /
+    Frida transports, .dat reader). 88 tests; Swarm's own .dat exports round-trip
+    byte for byte.
+  - Diagnosis: the April "must use Swarm's handle" conclusion compared different
+    bytes (07 7d header, invented 0x49 commit, no 0x45/0x4e activation, Swarm
+    killed) — the working bytes were never sent over a plain handle. Bugs fixed:
+    right-button offset 8 -> 9, push targeting the clicked slot, unknown actions
+    silently disabled, dead /api/write-buttons import, heap-read overwriting
+    stored keybinds.
+  - server.py + index.html on the package: per-slot push (/api/push-slot), push
+    all, transport switch (profiles/mouse_config.json), /api/mouse/status,
+    /api/import-dat; heap-scan live read removed.
+  - tools/: diag_swarm_handle.py, ab_test_buttons.py (A-F variants),
+    dump_mouse_pages.py; RUN_ON_PC.md.
+  - HANDOFF.md rewritten; CLAUDE.md / README updated; INSTALL_AND_RUN.bat installs
+    flask frida hidapi.
+
+@3 — 2026-04-10..12 (reconstructed from git; was never recorded here)
+  - Direct DPI write (0x46 pages + commit) and profile switch (0x45/0x4e) over
+    KONE_XP_AIR.dll's hidapi on the dongle usage page 0xFF03 (roccat_write.py).
+  - Button writes (0x47) over the same handle did not change behaviour; byte-exact
+    replay through Swarm II's own handle via Frida did (inject_full.js).
+  - frida_inject.py: switch / push / heap-scan read_profiles wired into server.py.
+  - Swarm II INI decoding (swarm_ini.py), named-pipe IPC research, pyautogui
+    automation attempts.
+
 @2 — 2026-03-23
   - HID protocol reverse-engineering session (Boot 1)
   - Built hid_spy.py: real-time HID report monitor
