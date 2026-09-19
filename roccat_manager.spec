@@ -21,7 +21,7 @@ hiddenimports = [
     "_frida",         # frida's native extension (lazy-imported by transport.py)
     "server",
     "kone_xp_air", "kone_xp_air.transport", "kone_xp_air.session", "kone_xp_air.protocol",
-    "kone_xp_air.actions", "kone_xp_air.sequences", "kone_xp_air.datfile",
+    "kone_xp_air.actions", "kone_xp_air.sequences", "kone_xp_air.datfile", "kone_xp_air.winput",
     # legacy .dat export helpers, imported lazily by some routes
     "SWARM_II_DAT_FORMAT", "dat_export",
 ]
