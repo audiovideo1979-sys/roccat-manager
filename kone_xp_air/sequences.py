@@ -60,12 +60,16 @@ def handshake():
 # ── Profile (DPI) block, command 0x46 — as roccat_write.write_profile (proven over a direct handle) ──
 
 def write_profile_block(block_bytes, commit_b=0xFF):
+    # Page-select flag 0x00 = WRITE, matching the proven button write (inject_full.js selects each 0x47
+    # page with flag 0x00). The old code used 0x01 here — the READ flag (read_pages / profile-switch
+    # read use 0x01) — so the profile pages were selected in read mode and the DPI writes never stuck
+    # (confirmed on hardware 2026-09-19: block content correct but push changed nothing).
     pages = P.split_pages(block_bytes, P.PROFILE_PAGES)
     ops = [mark('write profile block slot %d' % block_bytes[2])]
     for pg, page in enumerate(pages):
-        ops += [send(P.select_page_packet(P.CMD_PROFILE, pg, 0x01)), sleep(0.05)] + handshake()
+        ops += [send(P.select_page_packet(P.CMD_PROFILE, pg, 0x00)), sleep(0.05)] + handshake()
         ops += [send(P.write_page_packet(P.CMD_PROFILE, page)), sleep(0.05)] + handshake()
-    ops += [send(P.select_page_packet(P.CMD_PROFILE, 0x03, 0x01)), sleep(0.05)] + handshake()
+    ops += [send(P.select_page_packet(P.CMD_PROFILE, 0x03, 0x00)), sleep(0.05)] + handshake()
     # Commit as Swarm does: colour-B in byte 5, checksum over the 76 bytes (block + that B).
     cs = P.checksum16(bytes(block_bytes) + bytes([commit_b & 0xFF]))
     ops += [send(P.profile_commit_packet(commit_b, cs)), sleep(0.05)] + handshake()

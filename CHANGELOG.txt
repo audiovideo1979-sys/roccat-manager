@@ -32,7 +32,11 @@ ROCCAT Manager Full — Changelog
     76 bytes block+colour-B and puts colour-B in byte 5). The old bytes came from roccat_write, assumed
     to work in April but never verified. ProfileBlock/profile_commit_packet/write_profile_block now
     reproduce Swarm's real block byte-for-byte (pinned in test_datfile + test_protocol against the .dat
-    exports). PENDING hardware re-verify with the "Read back" button.
+    exports). That content fix alone did NOT apply on hardware (rebuilt+pushed, nothing changed), so the
+    write SEQUENCE was also wrong: write_profile_block selected each page with flag 0x01 (the READ flag)
+    instead of 0x00 (WRITE) — the proven button write (inject_full.js) selects 0x47 pages with 0x00.
+    Changed the profile page-select flag to 0x00. PENDING hardware re-verify (pointer speed should change
+    on push); if it still doesn't apply, next is a Frida capture of Swarm's DPI write to match exactly.
   - Added toward RGB-off (same block): "Toggle RGB" button option (wire 00 00 0b 08, in the confirmed
     0x47 block) turns onboard lighting off with a button press today; "Read back" diagnostic next to the
     DPI field checks whether the profile write reached onboard memory. Persistent lighting-off (default)

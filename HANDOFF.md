@@ -61,10 +61,15 @@
   actually verified. `ProfileBlock` / `profile_commit_packet` / `sequences.write_profile_block` now
   reproduce Swarm's real block byte-for-byte, pinned in `tests/test_datfile.py`
   (`test_profile_block_reproduces_swarm_main_blocks`) and `tests/test_protocol.py` against the .dat.
-  DPI X is raw LE16 (correct); DPI Y is set = X (Swarm uses a fixed [400,800,1200,1600,3200] ladder,
-  but Y=X is valid DPI and the checksum is over our own bytes, so acceptance holds — confirm via Read
-  back). **Verify on hardware:** set DPI 3000, push, Read back → should now report FOUND, and the
-  pointer speed should change.
+  DPI X is raw LE16 (correct); DPI Y is set = X.
+  **Content fix was not enough — the write SEQUENCE was also wrong.** After rebuild+push, nothing
+  changed on the mouse (no DPI, no pink). `write_profile_block` selected each page with **flag 0x01**
+  (the READ flag — `read_pages` and profile-switch reads use 0x01), unlike the proven button write,
+  which selects 0x47 pages with **flag 0x00** (`inject_full.js`). Changed the profile page-select flag
+  to **0x00** (WRITE). **Verify on hardware:** set DPI 3000, push → pointer speed should change (the
+  real oracle; the Read-back decode is unproven). If it STILL doesn't apply, we have no captured 0x46
+  write — capture Swarm changing DPI (Frida logger on hid_send/get_feature_report, 0x4d filter off) and
+  match its exact page/commit/activation sequence. Do NOT keep guessing.
 - **RGB off — still open, but unblocked.** The LEDs live in the same 0x46 block (7×5 entries at 36-70,
   hardcoded pink `14 ff 00 48 ff`), so once the block is accepted the app can set them. We have no
   Swarm "lighting off" export, and the LED-entry layout has two conflicting readings

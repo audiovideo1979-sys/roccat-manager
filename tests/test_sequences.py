@@ -54,9 +54,9 @@ def test_write_profile_block_commits_the_swarm_way():
     cs = (sum(block) + commit_b) & 0xFFFF               # checksum over 76 bytes
     expected = []
     for pg in range(3):
-        expected += [('send', pk('06 01 46 06 02 %02x 01' % pg), 0.0), ('sleep', b'', 0.05)] + HS()
+        expected += [('send', pk('06 01 46 06 02 %02x 00' % pg), 0.0), ('sleep', b'', 0.05)] + HS()
         expected += [('send', pk('06 01 46 06 19 ' + pages[pg].hex(' ')), 0.0), ('sleep', b'', 0.05)] + HS()
-    expected += [('send', pk('06 01 46 06 02 03 01'), 0.0), ('sleep', b'', 0.05)] + HS()
+    expected += [('send', pk('06 01 46 06 02 03 00'), 0.0), ('sleep', b'', 0.05)] + HS()
     expected += [('send', pk('06 01 46 06 03 %02x %02x %02x' % (commit_b, cs & 0xFF, cs >> 8)), 0.0), ('sleep', b'', 0.05)] + HS()
     assert strip_marks(S.write_profile_block(block, commit_b)) == expected
 
