@@ -17,13 +17,14 @@ ROCCAT Manager Full — Changelog
   - Active-profile memory: the onboard slot the mouse was last set to is persisted
     (slots.json "active_slot", written in run_mouse_job) and returned by GET /api/slots/{boot};
     a fresh launch now highlights the profile the mouse is on instead of nothing.
-  - Keybind list gained the bare modifiers (Ctrl/Shift/Alt/Win + right variants) for AutoCAD.
-  - Windows key on a button: the firmware ignores the lone GUI key as a standalone scancode
-    (00 e3 00 06 does nothing on hardware; Swarm II never binds a bare Win either, only Win+<key>).
-    A lone Win is now encoded through the modifier byte instead (00 00 08 06, GUI bit, no base key) —
-    the same channel Win+<key> combos use. Ctrl/Shift/Alt keep their proven scancode form.
-    PENDING hardware confirmation. decode_entry round-trips the new form and still reads the old one.
-  - Tests: 95 pass (active-slot persistence, read-does-not-clobber, lone-Windows-key encoding).
+  - Keybind list gained the bare modifiers Ctrl/Shift/Alt (+ right variants) and Escape for AutoCAD
+    (Esc cancels the current command).
+  - Windows key on a button is NOT possible on the Kone XP Air: both a standalone scancode
+    (00 e3 00 06) and the modifier-byte form (00 00 08 06) were tried on hardware and did nothing;
+    Swarm II never binds a lone Win either (only Win+<key>, e.g. WWM.dat 00 0b 08 06). Removed the
+    bare "Win" option from the button menu; the experimental encoding was reverted. For a Start-menu
+    button use Ctrl+Esc; Win+<key> shortcuts (Show Desktop, Snipping Tool) already work.
+  - Tests: 97 pass (active-slot persistence, read-does-not-clobber, Escape binds as a plain key).
 
 @5 — 2026-09-19 (hardware confirmed + desktop app)
   - DIRECT WRITES CONFIRMED on the mouse (A/B variant B): our own handle changed

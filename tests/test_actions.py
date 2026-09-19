@@ -38,6 +38,7 @@ def test_encode_matches_capture(name, wire):
 @pytest.mark.parametrize('loose,canon', [
     ('Ctrl+C', 'Hotkey LCtrl+C'), ('Delete', 'Hotkey Delete'), ('Insert', 'Hotkey Insert'),
     ('Page Up', 'Hotkey PageUp'), ('Page Down', 'Hotkey PageDown'), ('Hotkey Del', 'Hotkey Delete'),
+    ('Escape', 'Hotkey Escape'), ('Esc', 'Hotkey Escape'),
     ('Hotkey Alt+2', 'Hotkey LAlt+2'), ('Hotkey Alt+C', 'Hotkey LAlt+C'), ('Hotkey q', 'Hotkey Q'),
     ('Hotkey LShift', 'Hotkey LShift'), ('Hotkey Shift', 'Hotkey LShift'), ('Hotkey Left Shift', 'Hotkey LShift'),
     ('Browser Backward', 'Browser Back'), ('Click', 'Left Click'), ('Menu', 'Right Click'),
@@ -59,16 +60,11 @@ def test_modifier_only_hotkey_encoding():
     assert A.encode_action('Toggle RGB').hex(' ') == '00 00 0b 08'
 
 
-def test_lone_windows_key_uses_the_modifier_byte():
-    # The firmware ignores the Windows key as a standalone scancode (00 e3 00 06 does nothing), so a
-    # lone Win is sent with no base key and the GUI bit in the modifier byte instead. Round-trips.
-    assert A.encode_action('Win').hex(' ') == '00 00 08 06'
-    assert A.encode_action('Hotkey LWin').hex(' ') == '00 00 08 06'
-    assert A.decode_entry(bytes.fromhex('00 00 08 06')) == 'Hotkey LWin'
-    assert A.encode_action('Hotkey RWin').hex(' ') == '00 00 80 06'
-    assert A.decode_entry(bytes.fromhex('00 00 80 06')) == 'Hotkey RWin'
-    # the canonical name is unchanged; only the wire bytes differ
-    assert A.normalize('Win') == 'Hotkey LWin'
+def test_escape_binds_as_a_plain_key():
+    # Escape is a normal keyboard key (not a modifier), so it binds like any letter — useful on a
+    # button (e.g. AutoCAD "cancel command"). Offered directly in the UI dropdown.
+    assert A.encode_action('Escape').hex(' ') == '00 29 00 06'
+    assert A.decode_entry(bytes.fromhex('00 29 00 06')) == 'Hotkey Escape'
 
 
 def test_unknown_actions():

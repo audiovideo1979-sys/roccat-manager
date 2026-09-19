@@ -824,9 +824,9 @@ const KEYBIND_OPTIONS = [
   'Tilt Left', 'Tilt Right',
   'Browser Back', 'Browser Forward',
   'DPI Up', 'DPI Down', 'DPI Cycle Up', 'DPI Cycle Down',
-  'Page Up', 'Page Down', 'Delete', 'Insert', 'Home', 'End',
+  'Page Up', 'Page Down', 'Delete', 'Insert', 'Home', 'End', 'Escape',
   'Easy Shift', 'Profile Cycle',
-  'Ctrl', 'Shift', 'Alt', 'Win', 'Right Ctrl', 'Right Shift', 'Right Alt',
+  'Ctrl', 'Shift', 'Alt', 'Right Ctrl', 'Right Shift', 'Right Alt',
   'Copy', 'Paste', 'Cut', 'Undo', 'Redo',
   'Play/Pause', 'Next Track', 'Prev Track', 'Volume Up', 'Volume Down',
   'Snipping Tool', 'Task Manager', 'Show Desktop',
@@ -1103,8 +1103,10 @@ function updateDPI(val) {
 // ── Keybinds ───────────────────────────────────────────────────────────────
 // Bare-modifier bindings decode as "Hotkey LShift" etc.; show them as the plain dropdown option
 // so a lone Ctrl/Shift/Alt/Win is picked and displayed like any other key.
+// (No Win here: the mouse firmware won't fire a bare Windows key from a button, so it's not offered.
+//  Any leftover lone-Win binding falls through to the hotkey-chip display, which can be cleared.)
 const LONE_MODIFIERS = {
-  'Hotkey LCtrl':'Ctrl', 'Hotkey LShift':'Shift', 'Hotkey LAlt':'Alt', 'Hotkey LWin':'Win',
+  'Hotkey LCtrl':'Ctrl', 'Hotkey LShift':'Shift', 'Hotkey LAlt':'Alt',
   'Hotkey RCtrl':'Right Ctrl', 'Hotkey RShift':'Right Shift', 'Hotkey RAlt':'Right Alt',
 };
 

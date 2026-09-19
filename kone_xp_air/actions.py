@@ -116,13 +116,10 @@ MODIFIER_BITS = {
     'LCtrl': 0x01, 'LShift': 0x02, 'LAlt': 0x04, 'LWin': 0x08,
     'RCtrl': 0x10, 'RShift': 0x20, 'RAlt': 0x40, 'RWin': 0x80,
 }
-# The lone Windows/GUI key is the one modifier the Kone XP Air firmware ignores when sent as its own
-# scancode: 00 e3 00 06 does nothing on the mouse (confirmed on hardware 2026-09-19). It IS honored
-# through the modifier byte, though — that's how it fires inside Win+<key> combos (e.g. Win+H =
-# 00 0b 08 06 in WWM.dat). So a lone Windows key is encoded with no base key and the GUI bit set in
-# the modifier byte. Ctrl/Shift/Alt keep their own scancode (00 e0/e1/e2 00 06), which is confirmed
-# working and matches Swarm II's own .dat exports.
-_LONE_GUI_MODBIT = {0xE3: 0x08, 0xE7: 0x80}   # LWin scancode -> LWin bit, RWin -> RWin bit
+# Note: a *bare* Windows/GUI key does not fire from a button on the Kone XP Air — neither as its own
+# scancode (00 e3 00 06) nor through the modifier byte (00 00 08 06); both were tried on hardware
+# 2026-09-19 and did nothing. Swarm II never binds a lone Win either (only Win+<key>, e.g. WWM.dat
+# 00 0b 08 06). So the UI doesn't offer it. Ctrl/Shift/Alt as their own scancode do work.
 MODIFIER_NAMES = [(0x01, 'LCtrl'), (0x02, 'LShift'), (0x04, 'LAlt'), (0x08, 'LWin'),
                   (0x10, 'RCtrl'), (0x20, 'RShift'), (0x40, 'RAlt'), (0x80, 'RWin')]
 
@@ -210,8 +207,6 @@ def encode_action(name):
     if canon.startswith(RAW_PREFIX):
         return _parse_raw(canon)
     mods, scan, _ = parse_hotkey(canon[len(HOTKEY_PREFIX):])
-    if mods == 0 and scan in _LONE_GUI_MODBIT:   # lone Windows key -> modifier byte (see _LONE_GUI_MODBIT)
-        return bytes([0x00, 0x00, _LONE_GUI_MODBIT[scan], TYPE_KEYBOARD])
     return bytes([0x00, scan, mods, TYPE_KEYBOARD])
 
 
@@ -231,9 +226,6 @@ def decode_entry(entry):
             parts = [n for bit, n in MODIFIER_NAMES if b2 & bit and n != key]
             parts.append(key)
             return HOTKEY_PREFIX + '+'.join(parts)
-        # lone Windows/GUI key: no base key, GUI bit in the modifier byte (see _LONE_GUI_MODBIT)
-        if b1 == 0 and b2 in (0x08, 0x80):
-            return HOTKEY_PREFIX + ('LWin' if b2 == 0x08 else 'RWin')
     if b0 == 0 and b1 == 0 and (b2, typ) in _SIMPLE_BY_WIRE:
         return _SIMPLE_BY_WIRE[(b2, typ)]
     if entry == b'\x00\x00\x00\x00':

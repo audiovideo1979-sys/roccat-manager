@@ -40,14 +40,14 @@
   `activeSlot` on load). It is "what this app last set", not a read-back from the mouse — a decoded
   read-back of the mouse's current profile is still open (page reads are undecoded). Self-corrects on
   the next push/switch.
-- Windows key on a button: bare Ctrl/Alt/Shift fire (own scancode 00 e0/e1/e2 00 06), but a **bare
-  Windows key does not** when sent the same way (00 e3 00 06 does nothing — seen on hardware). Swarm II
-  never binds a lone Win either; every Win in the captures is Win+<key> (e.g. WWM.dat `00 0b 08 06`).
-  So a lone Win is now encoded through the **modifier byte** — `00 00 08 06` (GUI bit, no base key),
-  the channel the working Win+<key> combos use (`kone_xp_air/actions.py` `_LONE_GUI_MODBIT`).
-  **PENDING hardware confirmation.** If it still doesn't fire, the Windows key is simply not bindable
-  on this mouse (firmware guard) — offer Win+<key> shortcuts instead. `decode_entry` reads both the new
-  form and the old scancode form, so stored profiles are safe either way.
+- Windows key on a button — **not possible on this mouse (settled on hardware 2026-09-19).** Bare
+  Ctrl/Alt/Shift fire (own scancode 00 e0/e1/e2 00 06), but a bare Windows/GUI key does nothing, tried
+  both ways: as its own scancode (00 e3 00 06) and through the modifier byte (00 00 08 06). Swarm II
+  never binds a lone Win either — every Win in the captures is Win+<key> (e.g. WWM.dat `00 0b 08 06`),
+  so the firmware only honors the GUI key as a combo modifier. The bare "Win" option was removed from
+  the button menu and the modifier-byte experiment reverted. For a Start-menu button use **Ctrl+Esc**
+  (00 29 01 06); Win+<key> shortcuts (Show Desktop = Win+D, Snipping Tool = Win+Shift+S) work and are
+  already offered. Escape is now a first-class dropdown option (00 29 00 06) — handy for AutoCAD.
 
 ## Where things stand (2026-09-19)
 
