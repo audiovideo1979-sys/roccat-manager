@@ -163,8 +163,9 @@ class DirectHidTransport:
             raise TransportError('receiver (VID %04x PID %04x usage page %04x) not found' % (DONGLE_VID, DONGLE_PID, DONGLE_USAGE_PAGE))
         if isinstance(self.path, str):
             self.path = self.path.encode()
-        # 'auto' tries the bundled hidapi first (works without Swarm installed), then Swarm's DLL
-        backends = ['hid', 'dll'] if self.backend == 'auto' else [self.backend]
+        # 'auto' tries Swarm's DLL first (the write path confirmed on hardware), then the bundled
+        # hidapi as a fallback so the app still works if Swarm is not installed.
+        backends = ['dll', 'hid'] if self.backend == 'auto' else [self.backend]
         errors = []
         for b in backends:
             try:
