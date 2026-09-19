@@ -89,8 +89,11 @@ def activate_packet(b5=0x01):
     return packet([REPORT_ID, TARGET_MOUSE, CMD_ACTIVATE, 0x06, 0x04, b5, 0x01, 0x01, 0xFF])
 
 
-def profile_commit_packet(checksum):
-    return packet([REPORT_ID, TARGET_MOUSE, CMD_PROFILE, 0x06, SUB_COMMIT, 0xFF,
+def profile_commit_packet(commit_b, checksum):
+    """06 01 46 06 03 <commit_b> <cs_lo> <cs_hi>. Swarm puts the profile colour's B channel in byte 5
+    and the checksum over the 76 bytes (block + that B). The old code sent 0xff here with a 75-byte
+    checksum, which the mouse rejects."""
+    return packet([REPORT_ID, TARGET_MOUSE, CMD_PROFILE, 0x06, SUB_COMMIT, commit_b & 0xFF,
                    checksum & 0xFF, (checksum >> 8) & 0xFF])
 
 
@@ -311,7 +314,11 @@ PROFILE_PAGES = 3
 DPI_MIN, DPI_MAX = 50, 19000
 DPI_STAGES = 5
 
-_PROFILE_MID = bytes([0x00, 0x00, 0x03, 0x0a, 0x06, 0xff, 0x05, 0x00, 0x00])
+# Byte 5 and bytes 31-32 are matched to Swarm II's real .dat exports (WWM/Main Test/Grounded all agree):
+# byte 5 = 0x02 (we used to send 0x1f), byte 31 = 0x01, byte 32 = 0x00 (we used to send 0x06 0xff).
+# The old values came from roccat_write.build_profile, which was assumed to change DPI but never actually
+# verified — the mouse rejects that block (confirmed on hardware 2026-09-19, DPI write does nothing).
+_PROFILE_MID = bytes([0x00, 0x00, 0x03, 0x0a, 0x01, 0x00, 0x05, 0x00, 0x00])
 _PROFILE_LED_ENTRY = bytes([0x14, 0xFF, 0x00, 0x48, 0xFF])
 _PROFILE_TAIL = bytes([0x01, 0x64, 0xFF, 0xFF])
 
@@ -322,11 +329,12 @@ class ProfileBlock:
     dpi_x: list = field(default_factory=lambda: [800] * DPI_STAGES)
     dpi_y: list = None
     active_stage: int = 0
-    byte5: int = 0x1F
+    byte5: int = 0x02
     mid: bytes = _PROFILE_MID
     leds: bytes = _PROFILE_LED_ENTRY * 7
     tail: bytes = _PROFILE_TAIL
     bytes3_4: bytes = b'\x06\x06'
+    color: tuple = (0xFF, 0xFF, 0xFF)   # profile colour R,G,B; R,G sit at bytes 73-74, B rides the commit
 
     @classmethod
     def from_dpi(cls, slot, dpi, active_stage=0):
@@ -361,14 +369,23 @@ class ProfileBlock:
             struct.pack_into('<H', p, 17 + i * 2, ys[i])
         p[27:36] = self.mid
         p[36:71] = self.leds
-        p[71:75] = self.tail
+        p[71:73] = bytes(self.tail[:2])
+        p[73] = self.color[0] & 0xFF
+        p[74] = self.color[1] & 0xFF
         return bytes(p)
 
     def pages(self):
         return split_pages(self.to_bytes(), PROFILE_PAGES)
 
+    def commit_color_b(self):
+        """Byte 5 of the commit packet — the profile colour's B channel, as Swarm sends it."""
+        return self.color[2] & 0xFF
+
     def commit_checksum(self):
-        return checksum16(self.to_bytes())
+        """sum16 over the 75-byte block PLUS the colour-B byte (76 bytes), exactly as Swarm's .dat
+        exports store it and its wire commit computes it. The old form summed 75 bytes with 0xff in the
+        packet, which the mouse rejects."""
+        return checksum16(self.to_bytes() + bytes([self.commit_color_b()]))
 
     @classmethod
     def parse(cls, data):
@@ -378,4 +395,5 @@ class ProfileBlock:
         xs = [struct.unpack_from('<H', data, 7 + i * 2)[0] for i in range(DPI_STAGES)]
         ys = [struct.unpack_from('<H', data, 17 + i * 2)[0] for i in range(DPI_STAGES)]
         return cls(slot=data[2], dpi_x=xs, dpi_y=ys, active_stage=data[6], byte5=data[5],
-                   mid=data[27:36], leds=data[36:71], tail=data[71:75], bytes3_4=data[3:5])
+                   mid=data[27:36], leds=data[36:71], tail=data[71:75], bytes3_4=data[3:5],
+                   color=(data[73], data[74], 0x00))  # B is not in the 75-byte block; set it explicitly

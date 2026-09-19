@@ -75,6 +75,31 @@ def test_modifier_only_and_win_hotkeys_round_trip_from_swarm_exports():
         assert P.ButtonBlock.from_bindings(blk.primary, blk.easy_shift, header=blk.header).to_bytes() == raw, name
 
 
+def test_profile_block_reproduces_swarm_main_blocks():
+    """Our ProfileBlock builds, byte-for-byte, the 75-byte main block Swarm wrote AND its commit
+    checksum (sum16 over 76 = block + colour-B) for the single-colour profiles. This is the block the
+    mouse actually accepts — the old roccat_write form (byte5 0x1f, 75-byte checksum) was rejected."""
+    for name in ('Main Test.dat', 'WWM.dat'):
+        m = datfile.find_main_blocks(open(os.path.join(PROFILES, name), 'rb').read())[0]   # 78 bytes
+        p = P.ProfileBlock.parse(m[:75])
+        blk = P.ProfileBlock(slot=p.slot, dpi_x=p.dpi_x, dpi_y=p.dpi_y, active_stage=p.active_stage,
+                             color=(m[73], m[74], m[75]))     # defaults for byte5/mid/leds/tail
+        assert blk.to_bytes() == m[:75], name
+        assert blk.commit_color_b() == m[75], name
+        assert blk.commit_checksum() == (m[76] | (m[77] << 8)), name
+
+
+def test_any_swarm_main_block_round_trips_through_parse():
+    """parse -> to_bytes reproduces every Swarm main block exactly (incl. Grounded's per-zone colours),
+    so ProfileBlock can represent any real block and its 76-byte commit checksum."""
+    for name in ('Main Test.dat', 'WWM.dat', 'Grounded.dat'):
+        m = datfile.find_main_blocks(open(os.path.join(PROFILES, name), 'rb').read())[0]
+        blk = P.ProfileBlock.parse(m[:75])
+        blk.color = (m[73], m[74], m[75])
+        assert blk.to_bytes() == m[:75], name
+        assert blk.commit_checksum() == (m[76] | (m[77] << 8)), name
+
+
 def test_to_stored_profile_shape():
     e = load('Main Test.dat')[0]
     sp = datfile.to_stored_profile(e, 'Main Test')

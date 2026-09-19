@@ -114,7 +114,7 @@ def test_packets_match_captured_bytes():
     assert P.profile_select_packet(1)[:7].hex(' ') == '06 01 45 06 02 01 05'
     assert P.activate_packet()[:9].hex(' ') == '06 01 4e 06 04 01 01 01 ff'
     assert P.activate_packet(3)[:9].hex(' ') == '06 01 4e 06 04 03 01 01 ff'
-    assert P.profile_commit_packet(0x1234)[:8].hex(' ') == '06 01 46 06 03 ff 34 12'
+    assert P.profile_commit_packet(0xdc, 0x1234)[:8].hex(' ') == '06 01 46 06 03 dc 34 12'
     assert P.commit49_packet(0x456F)[:8].hex(' ') == '06 01 49 06 03 05 6f 45'
     assert P.receiver_packet(0x00, 0x04)[:4].hex(' ') == '06 00 00 04'
     page = P.write_page_packet(P.CMD_BUTTONS, CAP[:25])
@@ -132,33 +132,37 @@ def test_describe():
     assert 'write page' in P.describe(P.write_page_packet(P.CMD_PROFILE, CAP[:25]))
 
 
-# ── profile (DPI) block: must equal roccat_write.build_profile, the form proven on hardware ──
+# ── profile (DPI) block: must equal Swarm II's real .dat form ──
+# The old test pinned roccat_write.build_profile ("proven on hardware"), but that block is REJECTED by
+# the mouse (confirmed 2026-09-19: DPI-set-in-app does nothing, read-back doesn't contain it). The real
+# form comes from Swarm's own .dat exports (WWM/Main Test/Grounded): byte 5 = 0x02, bytes 31-32 = 01 00,
+# and the commit checksum is over the 76 bytes (block + colour-B). See test_datfile for the .dat pin.
 
-def reference_build_profile(dpi_values, profile_slot=0, polling_rate=0x1f):
-    """Verbatim port of roccat_write.build_profile (April 2026)."""
+def reference_swarm_profile(dpi_values, profile_slot=0, active_stage=0, color=(0xFF, 0xFF, 0xFF)):
+    """The real Swarm II profile block layout (its .dat exports reproduce byte-for-byte)."""
     p = bytearray(75)
-    p[0] = 0x06; p[1] = 0x4E; p[2] = profile_slot; p[3] = 0x06; p[4] = 0x06; p[5] = polling_rate; p[6] = 0x00
+    p[0] = 0x06; p[1] = 0x4E; p[2] = profile_slot; p[3] = 0x06; p[4] = 0x06; p[5] = 0x02; p[6] = active_stage
     for i in range(5):
         dpi = dpi_values[i] if i < len(dpi_values) else dpi_values[-1]
         struct.pack_into('<H', p, 7 + i * 2, dpi)
-    for i in range(5):
-        dpi = dpi_values[i] if i < len(dpi_values) else dpi_values[-1]
         struct.pack_into('<H', p, 17 + i * 2, dpi)
-    p[27] = 0x00; p[28] = 0x00; p[29] = 0x03; p[30] = 0x0a; p[31] = 0x06; p[32] = 0xff; p[33] = 0x05; p[34] = 0x00; p[35] = 0x00
+    p[27:36] = bytes([0x00, 0x00, 0x03, 0x0a, 0x01, 0x00, 0x05, 0x00, 0x00])
     for i in range(7):
         offset = 36 + i * 5
-        if offset + 4 < len(p):
-            p[offset] = 0x14; p[offset + 1] = 0xFF; p[offset + 2] = 0x00; p[offset + 3] = 0x48; p[offset + 4] = 0xFF
-    p[71] = 0x01; p[72] = 0x64; p[73] = 0xFF; p[74] = 0xFF
+        p[offset:offset + 5] = bytes([0x14, 0xFF, 0x00, 0x48, 0xFF])
+    p[71] = 0x01; p[72] = 0x64; p[73] = color[0]; p[74] = color[1]
     return bytes(p)
 
 
 @pytest.mark.parametrize('slot,dpi', [(0, 800), (3, 950), (4, [400, 800, 1600, 3200, 6400]), (1, [1200])])
-def test_profile_block_matches_reference_builder(slot, dpi):
+def test_profile_block_matches_swarm_form(slot, dpi):
     blk = P.ProfileBlock.from_dpi(slot, dpi)
     ref_values = [dpi] * 5 if isinstance(dpi, int) else dpi
-    assert blk.to_bytes() == reference_build_profile(ref_values, profile_slot=slot)
-    assert blk.commit_checksum() == sum(reference_build_profile(ref_values, profile_slot=slot)) & 0xFFFF
+    ref = reference_swarm_profile(ref_values, profile_slot=slot)
+    assert blk.to_bytes() == ref
+    # commit checksum is over the 76 bytes: the block plus the colour-B byte (default 0xff)
+    assert blk.commit_color_b() == 0xFF
+    assert blk.commit_checksum() == (sum(ref) + 0xFF) & 0xFFFF
     back = P.ProfileBlock.parse(blk.to_bytes())
     assert back.slot == slot and back.dpi_x == blk.dpi_x and back.dpi_y == blk.dpi_x
 

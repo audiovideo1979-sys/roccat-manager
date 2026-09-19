@@ -44,18 +44,21 @@ def test_write_buttons_equals_inject_full_js_replay():
     assert strip_marks(ops) == expected
 
 
-def test_write_profile_equals_roccat_write_write_profile():
-    """roccat_write.write_profile: the direct-handle sequence that changed DPI on the mouse."""
+def test_write_profile_block_commits_the_swarm_way():
+    """Profile write: 3 page writes then a commit with colour-B in byte 5 and the checksum over the 76
+    bytes (block + colour-B) — the form Swarm's .dat exports use. The old 0xff/75-byte commit is what
+    the mouse was rejecting (DPI-set-in-app did nothing)."""
     block = P.ProfileBlock.from_dpi(2, 950).to_bytes()
+    commit_b = 0xFF                                     # default colour-B
     pages = [block[i * 25:(i + 1) * 25] for i in range(3)]
-    cs = sum(block) & 0xFFFF
+    cs = (sum(block) + commit_b) & 0xFFFF               # checksum over 76 bytes
     expected = []
     for pg in range(3):
         expected += [('send', pk('06 01 46 06 02 %02x 01' % pg), 0.0), ('sleep', b'', 0.05)] + HS()
         expected += [('send', pk('06 01 46 06 19 ' + pages[pg].hex(' ')), 0.0), ('sleep', b'', 0.05)] + HS()
     expected += [('send', pk('06 01 46 06 02 03 01'), 0.0), ('sleep', b'', 0.05)] + HS()
-    expected += [('send', pk('06 01 46 06 03 ff %02x %02x' % (cs & 0xFF, cs >> 8)), 0.0), ('sleep', b'', 0.05)] + HS()
-    assert strip_marks(S.write_profile_block(block)) == expected
+    expected += [('send', pk('06 01 46 06 03 %02x %02x %02x' % (commit_b, cs & 0xFF, cs >> 8)), 0.0), ('sleep', b'', 0.05)] + HS()
+    assert strip_marks(S.write_profile_block(block, commit_b)) == expected
 
 
 def test_switch_profile_equals_frida_inject_switch():

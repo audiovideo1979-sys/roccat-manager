@@ -53,7 +53,7 @@ class KoneXPAir:
 
     def write_dpi(self, slot, dpi, active_stage=0):
         block = P.ProfileBlock.from_dpi(slot, dpi, active_stage)
-        self._run(S.write_profile_block(block.to_bytes()))
+        self._run(S.write_profile_block(block.to_bytes(), block.commit_color_b()))
         return block
 
     def build_button_block(self, slot, keybinds, easy_shift, base=None):
@@ -85,7 +85,7 @@ class KoneXPAir:
             stages = dpi.get('stages', 800) if isinstance(dpi, dict) else dpi
             active = dpi.get('active_stage', 0) if isinstance(dpi, dict) else 0
             dblock = P.ProfileBlock.from_dpi(slot, stages, active)
-            ops += S.write_profile_block(dblock.to_bytes()) + [S.sleep(0.1)]
+            ops += S.write_profile_block(dblock.to_bytes(), dblock.commit_color_b()) + [S.sleep(0.1)]
             summary['dpi'] = dblock.dpi_x
         keybinds = profile.get('keybinds') or {}
         easy_shift = profile.get('easy_shift') or {}
