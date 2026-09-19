@@ -46,3 +46,19 @@ Paste the `concatenated answers` lines. If they contain the button block, profil
 straight from the mouse instead of from Swarm's memory.
 
 Send back: the diag output, the A/B summary (letters + what button 12 did), and any error text.
+
+## 4. Capture Swarm's DPI write (to fix DPI-set-in-app doing nothing)
+Our own 0x46 profile write is rejected by the mouse, and we have no capture of how Swarm writes DPI.
+This records it:
+```bat
+python tools/capture_swarm_dpi.py
+```
+1. Open **Swarm II** first (so it owns the mouse).
+2. Run the command above — it prints `hooked KONE_XP_AIR.dll ...`.
+3. In Swarm II, change the **DPI** to a distinctive value (e.g. 800 → 3000) and click apply/save.
+4. Watch the `SEND` / `GET` lines scroll, then press ENTER to stop.
+5. Copy ALL the `SEND`/`GET` lines that appeared when you changed the DPI and send them back.
+
+If nothing prints when you change the DPI, re-run with
+`python tools/capture_swarm_dpi.py --process "Turtle Beach Device Service.exe"`.
+Run the terminal as Administrator if attaching fails.
