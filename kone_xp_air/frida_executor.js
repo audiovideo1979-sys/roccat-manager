@@ -43,8 +43,10 @@ function main(kone) {
 
     // Every hid_device* Swarm uses for report 0x06, with the command bytes seen on it.
     var handles = {};
+    var running = false;   // true once run() starts issuing OUR writes, so they don't pollute the census
     Interceptor.attach(sendAddr, {
         onEnter: function (args) {
+            if (running) return;
             try {
                 var buf = args[1];
                 if (buf.isNull() || buf.readU8() !== 0x06) return;
@@ -99,6 +101,7 @@ function main(kone) {
         var handle = h.ptr;
         var diag = null;
         if (PARAMS.diag) { try { diag = diagnose(handle); } catch (e) { diag = { error: String(e) }; } }
+        running = true;   // from here our own sends must not be counted against Swarm's handle
         var buf = Memory.alloc(64);
         var results = [];
         var ops = PARAMS.ops || [];
@@ -107,7 +110,12 @@ function main(kone) {
             try {
                 if (op.k === 'send') {
                     for (var j = 0; j < 30; j++) buf.add(j).writeU8(j < op.d.length ? op.d[j] : 0);
-                    results.push({ i: i, rc: nativeSend(handle, buf, 30) });
+                    var src = nativeSend(handle, buf, 30);
+                    results.push({ i: i, rc: src });
+                    if (src < 0 && PARAMS.abort_on_error) {   // do not send the commit after a failed page write
+                        results.push({ i: i, note: 'aborted after failed send' });
+                        break;
+                    }
                 } else if (op.k === 'get') {
                     for (var j = 0; j < 30; j++) buf.add(j).writeU8(j === 0 ? 0x06 : 0);
                     var rc = nativeGet(handle, buf, 30);
@@ -120,6 +128,7 @@ function main(kone) {
                 }
             } catch (e) {
                 results.push({ i: i, rc: -1, err: String(e) });
+                if (PARAMS.abort_on_error) break;
             }
         }
         send({ done: true, ok: true, results: results, handle: handle.toString(), handles: summarize(), diag: diag, log: LOG });

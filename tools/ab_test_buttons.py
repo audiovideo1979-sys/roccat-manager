@@ -143,10 +143,11 @@ def main():
     tee = Tee(log_path)
 
     def direct():
-        return DirectHidTransport(path=path, backend=args.backend, log=tee.say)
+        # abort_on_error=False: this is a diagnostic — run the whole op list so the log shows where it broke
+        return DirectHidTransport(path=path, backend=args.backend, abort_on_error=False, log=tee.say)
 
     def frida():
-        return FridaTransport(log=tee.say)
+        return FridaTransport(abort_on_error=False, log=tee.say)
 
     variants = [
         ('A', 'Frida, Swarm running', frida, {}),

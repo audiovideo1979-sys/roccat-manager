@@ -145,10 +145,11 @@ class DirectHidTransport:
     """Our own handle. backend='dll' calls the hidapi bundled in Swarm's KONE_XP_AIR.dll exactly as
     roccat_write.py did (the form proven to change DPI); backend='hid' uses the python `hid` package."""
 
-    def __init__(self, path=None, backend='dll', dll_path=KONE_DLL, log=None):
+    def __init__(self, path=None, backend='dll', dll_path=KONE_DLL, abort_on_error=True, log=None):
         self.path = path
         self.backend = backend
         self.dll_path = dll_path
+        self.abort_on_error = abort_on_error   # stop before the commit if a page send fails
         self.log = log or (lambda m: None)
         self.dev = None
         self.dll = None
@@ -196,7 +197,12 @@ class DirectHidTransport:
         for op in ops:
             try:
                 if op.kind == 'send':
-                    results.append(OpResult(op, rc=self._send(op.data)))
+                    rc = self._send(op.data)
+                    results.append(OpResult(op, rc=rc))
+                    if rc < 0 and self.abort_on_error:
+                        # a failed page write must not be followed by the commit/activate packet
+                        self.log('send failed (rc=%s); aborting before commit' % rc)
+                        break
                 elif op.kind == 'get':
                     rc, resp = self._get()
                     results.append(OpResult(op, rc=rc, response=resp))
@@ -205,8 +211,10 @@ class DirectHidTransport:
                     results.append(OpResult(op))
                 else:
                     results.append(OpResult(op))
-            except Exception as e:  # keep going so the log shows where it broke
+            except Exception as e:
                 results.append(OpResult(op, rc=-1, error=str(e)))
+                if self.abort_on_error:
+                    break
         return results
 
     def _send(self, data):
@@ -245,11 +253,12 @@ class FridaTransport:
     """Executes ops with Swarm II's own hid_device handle. Swarm must be running and connected."""
 
     def __init__(self, process_name=SWARM_EXE, wait_handle_s=8.0, prefer_non_lighting=True,
-                 diag=False, log=None):
+                 diag=False, abort_on_error=True, log=None):
         self.process_name = process_name
         self.wait_handle_s = wait_handle_s
         self.prefer_non_lighting = prefer_non_lighting
         self.diag = diag
+        self.abort_on_error = abort_on_error   # stop before the commit if a page send fails
         self.log = log or (lambda m: None)
         self.last_message = None
 
@@ -274,7 +283,8 @@ class FridaTransport:
         with open(EXECUTOR_JS, encoding='utf-8') as f:
             js = f.read()
         params = {'ops': to_json(ops), 'wait_handle_s': self.wait_handle_s,
-                  'prefer_non_lighting': self.prefer_non_lighting, 'diag': self.diag}
+                  'prefer_non_lighting': self.prefer_non_lighting, 'diag': self.diag,
+                  'abort_on_error': self.abort_on_error}
         js = js.replace('%%PARAMS%%', json.dumps(params))
         done = threading.Event()
         box = {}
