@@ -1,5 +1,20 @@
 # ROCCAT Manager — Handoff
 
+## Confirmed on hardware (2026-09-19, PC run)
+
+- `pytest` passes on the PC (Python 3.12, frida 17.9.1, hidapi 0.15.0).
+- `diag_swarm_handle.py`: Swarm II opens and writes through
+  `\\?\HID#VID_10F5&PID_5017&MI_02&Col03#...` — the dongle, interface 2, collection 3,
+  **usage page 0xFF03, usage 0xFF00**, product "Kone XP Air Dongle". It opens that same path twice
+  (one handle streams 0x4d lighting, one carries the 06 00 00 04/05 receiver pings). The receiver's
+  HID collection list has exactly one 0xFF03 collection — that same Col03 path.
+- **This is the collection `DirectHidTransport` / `find_dongle_path` open by default** (PID 0x5017,
+  usage page 0xFF03). So Swarm's handle is not on a private collection; a fresh handle to the same
+  path should behave the same. Strong evidence the April "must use Swarm's handle" conclusion was the
+  wrong-bytes problem, not the handle. The direct-vs-Frida button A/B test (variant B) is the empirical
+  confirmation — pending.
+- Bug fixed live: frida 17 removed `frida.enumerate_processes()` (now on the device object).
+
 ## Where things stand (2026-09-19)
 
 **Working today:** with Swarm II running in the tray, the app writes DPI, button layouts and profile
