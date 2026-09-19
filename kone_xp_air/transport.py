@@ -126,10 +126,11 @@ def kill_swarm(wait=2.0):
 
 
 def is_swarm_running():
-    return find_pid(SWARM_EXE) is not None
+    return find_process_pid(SWARM_EXE) is not None
 
 
-def find_pid(image_name):
+def find_process_pid(image_name):
+    """PID of a running image by name, via tasklist (Windows-native, no frida-version dependency)."""
     r = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq %s' % image_name, '/FO', 'CSV', '/NH'],
                        capture_output=True, text=True)
     for line in r.stdout.splitlines():
@@ -253,11 +254,17 @@ class FridaTransport:
         self.last_message = None
 
     def find_pid(self):
-        import frida
-        for p in frida.enumerate_processes():
-            if p.name.lower() == self.process_name.lower():
-                return p.pid
-        return None
+        # frida 17 removed the top-level frida.enumerate_processes(); process enumeration is on the
+        # device now. Fall back to tasklist so PID lookup does not depend on the frida version.
+        name = self.process_name.lower()
+        try:
+            import frida
+            for p in frida.get_local_device().enumerate_processes():
+                if p.name.lower() == name:
+                    return p.pid
+        except Exception as e:
+            self.log('frida process enumerate failed (%s); using tasklist' % e)
+        return find_process_pid(self.process_name)
 
     def run(self, ops):
         import frida
@@ -284,7 +291,15 @@ class FridaTransport:
                 box['msg'] = {'ok': False, 'error': msg.get('description') or msg.get('stack') or str(msg)}
                 done.set()
 
-        session = frida.attach(pid)
+        try:
+            session = frida.get_local_device().attach(pid)
+        except Exception:
+            try:
+                session = frida.attach(pid)   # older frida
+            except Exception as e:
+                raise TransportError(
+                    'could not attach to %s (pid %s): %s. Run the terminal as Administrator.'
+                    % (self.process_name, pid, e))
         try:
             script = session.create_script(js)
             script.on('message', on_message)
