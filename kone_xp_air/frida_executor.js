@@ -128,6 +128,7 @@ function main(kone) {
     // Identify what Swarm's handle actually points at: VID/PID, usage page/usage, report lengths, kernel object name.
     function diagnose(hidDev) {
         var out = {};
+        try {
         // hidapi (windows/hid.c): struct hid_device_ { HANDLE device_handle; BOOL blocking; USHORT output_report_length; ... }
         var hFile = hidDev.readPointer();
         out.device_handle = hFile.toString();
@@ -181,6 +182,7 @@ function main(kone) {
                 else out.ntqueryobject_status = '0x' + s.toString(16);
             }
         }
+        } catch (e) { out.diagnose_error = String(e); }
         return out;
     }
 }
