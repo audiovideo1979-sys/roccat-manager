@@ -145,13 +145,16 @@ class DirectHidTransport:
     """Our own handle. backend='dll' calls the hidapi bundled in Swarm's KONE_XP_AIR.dll exactly as
     roccat_write.py did (the form proven to change DPI); backend='hid' uses the python `hid` package."""
 
-    def __init__(self, path=None, backend='dll', dll_path=KONE_DLL, abort_on_error=True,
-                 send_retries=2, log=None):
+    def __init__(self, path=None, backend='dll', dll_path=KONE_DLL, abort_on_error=False,
+                 send_retries=4, log=None):
         self.path = path
         self.backend = backend
         self.dll_path = dll_path
-        self.abort_on_error = abort_on_error   # stop before the commit if a page send fails
-        self.send_retries = send_retries       # retry a feature-report send that returns rc<0 (transient)
+        # abort_on_error default False: a button block has no atomic commit, so writing ALL pages
+        # (a coherent block) is safer than stopping half-way; this matches the sequence proven on
+        # hardware. send_retries clears the occasional transient rc=-1 so a full write lands.
+        self.abort_on_error = abort_on_error
+        self.send_retries = send_retries
         self.log = log or (lambda m: None)
         self.dev = None
         self.dll = None
@@ -280,12 +283,12 @@ class FridaTransport:
     """Executes ops with Swarm II's own hid_device handle. Swarm must be running and connected."""
 
     def __init__(self, process_name=SWARM_EXE, wait_handle_s=8.0, prefer_non_lighting=True,
-                 diag=False, abort_on_error=True, log=None):
+                 diag=False, abort_on_error=False, log=None):
         self.process_name = process_name
         self.wait_handle_s = wait_handle_s
         self.prefer_non_lighting = prefer_non_lighting
         self.diag = diag
-        self.abort_on_error = abort_on_error   # stop before the commit if a page send fails
+        self.abort_on_error = abort_on_error   # default False: write the whole (coherent) block
         self.log = log or (lambda m: None)
         self.last_message = None
 
