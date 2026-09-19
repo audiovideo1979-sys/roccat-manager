@@ -786,6 +786,7 @@ const KEYBIND_OPTIONS = [
   'DPI Up', 'DPI Down', 'DPI Cycle Up', 'DPI Cycle Down',
   'Page Up', 'Page Down', 'Delete', 'Insert', 'Home', 'End',
   'Easy Shift', 'Profile Cycle',
+  'Ctrl', 'Shift', 'Alt', 'Win', 'Right Ctrl', 'Right Shift', 'Right Alt',
   'Copy', 'Paste', 'Cut', 'Undo', 'Redo',
   'Play/Pause', 'Next Track', 'Prev Track', 'Volume Up', 'Volume Down',
   'Snipping Tool', 'Task Manager', 'Show Desktop',
@@ -1053,7 +1054,15 @@ function updateDPI(val) {
 }
 
 // ── Keybinds ───────────────────────────────────────────────────────────────
+// Bare-modifier bindings decode as "Hotkey LShift" etc.; show them as the plain dropdown option
+// so a lone Ctrl/Shift/Alt/Win is picked and displayed like any other key.
+const LONE_MODIFIERS = {
+  'Hotkey LCtrl':'Ctrl', 'Hotkey LShift':'Shift', 'Hotkey LAlt':'Alt', 'Hotkey LWin':'Win',
+  'Hotkey RCtrl':'Right Ctrl', 'Hotkey RShift':'Right Shift', 'Hotkey RAlt':'Right Alt',
+};
+
 function buildKeybindCell(value, key, layer) {
+  if (LONE_MODIFIERS[value]) value = LONE_MODIFIERS[value];
   const isHotkey = value && value.startsWith('Hotkey ');
   const changeFn = layer === 'primary' ? 'updateKeybind' : 'updateEasyShift';
   const recId = `rec-${layer}-${key}`;
