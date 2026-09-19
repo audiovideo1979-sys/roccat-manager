@@ -18,7 +18,12 @@ ROCCAT Manager Full — Changelog
     (slots.json "active_slot", written in run_mouse_job) and returned by GET /api/slots/{boot};
     a fresh launch now highlights the profile the mouse is on instead of nothing.
   - Keybind list gained the bare modifiers (Ctrl/Shift/Alt/Win + right variants) for AutoCAD.
-  - Tests: 94 pass (active-slot persistence + read-does-not-clobber added).
+  - Windows key on a button: the firmware ignores the lone GUI key as a standalone scancode
+    (00 e3 00 06 does nothing on hardware; Swarm II never binds a bare Win either, only Win+<key>).
+    A lone Win is now encoded through the modifier byte instead (00 00 08 06, GUI bit, no base key) —
+    the same channel Win+<key> combos use. Ctrl/Shift/Alt keep their proven scancode form.
+    PENDING hardware confirmation. decode_entry round-trips the new form and still reads the old one.
+  - Tests: 95 pass (active-slot persistence, read-does-not-clobber, lone-Windows-key encoding).
 
 @5 — 2026-09-19 (hardware confirmed + desktop app)
   - DIRECT WRITES CONFIRMED on the mouse (A/B variant B): our own handle changed

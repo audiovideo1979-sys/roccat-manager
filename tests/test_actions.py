@@ -49,12 +49,26 @@ def test_loose_spellings(loose, canon):
 
 
 def test_modifier_only_hotkey_encoding():
-    # lone modifier = its own scancode with modbits 0, exactly as Swarm II writes it in Main Test.dat / Grounded.dat
+    # Ctrl/Shift/Alt lone = own scancode + modbits 0, exactly as Swarm II writes it in Main Test.dat /
+    # Grounded.dat (confirmed on hardware). These must NOT change.
+    assert A.encode_action('Hotkey LCtrl').hex(' ') == '00 e0 00 06'
     assert A.encode_action('Hotkey LShift').hex(' ') == '00 e1 00 06'
     assert A.encode_action('Hotkey LAlt').hex(' ') == '00 e2 00 06'
     assert A.decode_entry(bytes.fromhex('00 e1 00 06')) == 'Hotkey LShift'
     assert A.encode_action('Hotkey LWin+H').hex(' ') == '00 0b 08 06'      # WWM.dat
     assert A.encode_action('Toggle RGB').hex(' ') == '00 00 0b 08'
+
+
+def test_lone_windows_key_uses_the_modifier_byte():
+    # The firmware ignores the Windows key as a standalone scancode (00 e3 00 06 does nothing), so a
+    # lone Win is sent with no base key and the GUI bit in the modifier byte instead. Round-trips.
+    assert A.encode_action('Win').hex(' ') == '00 00 08 06'
+    assert A.encode_action('Hotkey LWin').hex(' ') == '00 00 08 06'
+    assert A.decode_entry(bytes.fromhex('00 00 08 06')) == 'Hotkey LWin'
+    assert A.encode_action('Hotkey RWin').hex(' ') == '00 00 80 06'
+    assert A.decode_entry(bytes.fromhex('00 00 80 06')) == 'Hotkey RWin'
+    # the canonical name is unchanged; only the wire bytes differ
+    assert A.normalize('Win') == 'Hotkey LWin'
 
 
 def test_unknown_actions():
