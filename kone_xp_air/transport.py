@@ -145,11 +145,13 @@ class DirectHidTransport:
     """Our own handle. backend='dll' calls the hidapi bundled in Swarm's KONE_XP_AIR.dll exactly as
     roccat_write.py did (the form proven to change DPI); backend='hid' uses the python `hid` package."""
 
-    def __init__(self, path=None, backend='dll', dll_path=KONE_DLL, abort_on_error=True, log=None):
+    def __init__(self, path=None, backend='dll', dll_path=KONE_DLL, abort_on_error=True,
+                 send_retries=2, log=None):
         self.path = path
         self.backend = backend
         self.dll_path = dll_path
         self.abort_on_error = abort_on_error   # stop before the commit if a page send fails
+        self.send_retries = send_retries       # retry a feature-report send that returns rc<0 (transient)
         self.log = log or (lambda m: None)
         self.dev = None
         self.dll = None
@@ -219,9 +221,16 @@ class DirectHidTransport:
 
     def _send(self, data):
         data = P.packet(data)
-        if self.backend == 'dll':
-            return self.dll.hid_send_feature_report(self.dev, data, P.REPORT_LEN)
-        return self.dev.send_feature_report(list(data))
+        rc = -1
+        for attempt in range(self.send_retries + 1):
+            if self.backend == 'dll':
+                rc = self.dll.hid_send_feature_report(self.dev, data, P.REPORT_LEN)
+            else:
+                rc = self.dev.send_feature_report(list(data))
+            if rc >= 0:
+                return rc
+            time.sleep(0.02)   # transient -1 on the receiver; a quick retry clears it
+        return rc
 
     def _get(self):
         if self.backend == 'dll':

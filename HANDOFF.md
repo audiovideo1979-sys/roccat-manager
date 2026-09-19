@@ -2,6 +2,14 @@
 
 ## Confirmed on hardware (2026-09-19, PC run)
 
+- **DIRECT WRITES WORK.** A/B test, variant B (our own `DirectHidTransport` handle, backend=dll, Swarm
+  II running): writing button 12 = key "M" through our own handle changed the physical button — pressing
+  it typed `m`. Swarm II is NOT in the write path. This settles the April question: the "must use Swarm's
+  handle" conclusion was the wrong-bytes problem, not the handle. **The app can run Transport = Direct and
+  drop the Frida/Swarm dependency for writes.** (Variant A / Frida read "no change" in the same run, most
+  likely a mis-press during setup; irrelevant, B is the target path.)
+- Reliability note: 4 of 131 feature reports returned rc=-1 (transient) yet the block still landed. Added
+  an automatic send retry to `DirectHidTransport` so pushes are solid.
 - `pytest` passes on the PC (Python 3.12, frida 17.9.1, hidapi 0.15.0).
 - `diag_swarm_handle.py`: Swarm II opens and writes through
   `\\?\HID#VID_10F5&PID_5017&MI_02&Col03#...` — the dongle, interface 2, collection 3,

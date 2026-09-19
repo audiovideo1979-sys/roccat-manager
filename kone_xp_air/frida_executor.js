@@ -111,6 +111,7 @@ function main(kone) {
                 if (op.k === 'send') {
                     for (var j = 0; j < 30; j++) buf.add(j).writeU8(j < op.d.length ? op.d[j] : 0);
                     var src = nativeSend(handle, buf, 30);
+                    for (var a = 0; a < 2 && src < 0; a++) { Thread.sleep(0.02); src = nativeSend(handle, buf, 30); }
                     results.push({ i: i, rc: src });
                     if (src < 0 && PARAMS.abort_on_error) {   // do not send the commit after a failed page write
                         results.push({ i: i, note: 'aborted after failed send' });
