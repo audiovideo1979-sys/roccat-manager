@@ -599,6 +599,39 @@
   #toast.success { border-color: var(--green); color: var(--green-txt); }
   #toast.error   { border-color: var(--red);   color: var(--red-txt);   }
 
+  /* ── Busy overlay (mouse write in progress — UI locked) ── */
+  #busy-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 15, 18, 0.74);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    cursor: wait;
+  }
+  #busy-overlay.show { display: flex; }
+  #busy-overlay .busy-card {
+    background: var(--bg4);
+    border: 1px solid var(--amber);
+    border-radius: var(--radius-lg);
+    padding: 24px 30px;
+    text-align: center;
+    max-width: 340px;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.55);
+  }
+  #busy-overlay .busy-spinner {
+    width: 32px; height: 32px;
+    margin: 0 auto 16px;
+    border: 3px solid var(--amber-dim);
+    border-top-color: var(--amber);
+    border-radius: 50%;
+    animation: busy-spin 0.8s linear infinite;
+  }
+  @keyframes busy-spin { to { transform: rotate(360deg); } }
+  #busy-overlay .busy-title { font-size: 15px; font-weight: 600; color: var(--amber-txt); margin-bottom: 8px; }
+  #busy-overlay .busy-sub   { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
   /* ── Status bar ── */
   .statusbar {
     display: flex;
@@ -742,6 +775,12 @@
 
 <div id="toast"></div>
 
+<div id="busy-overlay"><div class="busy-card">
+  <div class="busy-spinner"></div>
+  <div class="busy-title" id="busy-title">Writing to the mouse...</div>
+  <div class="busy-sub" id="busy-sub">Loading the profile onto the mouse. Don't switch profiles or unplug the receiver until this finishes.</div>
+</div></div>
+
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 let currentBoot      = 'boot1';
@@ -833,6 +872,9 @@ async function loadStored() {
 async function loadSlots() {
   const data = await apiFetch('GET', `/slots/${currentBoot}`);
   activeSlots = data.slots || [];
+  // Show which onboard profile the mouse is currently on (persisted from the last push/switch),
+  // so a fresh launch highlights it instead of showing nothing.
+  if (typeof data.active_slot === 'number') activeSlot = data.active_slot;
   renderActiveSlots();
 }
 
@@ -919,19 +961,23 @@ async function onSlotClick(slotNum) {
 }
 
 async function pushSlot(slotNum, name) {
-  setStatus(`Writing ${name} to slot ${slotNum} and switching...`);
-  toast(`Writing ${name} to slot ${slotNum} (about 15 s)...`, 'info');
-  try {
-    const res = await fetch('/api/push-slot', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ boot_id: currentBoot, slot: slotNum })
+  await withMouseLock(
+    `Writing ${name} to slot ${slotNum}...`,
+    "Loading it onto the mouse (about 15 s). Don't switch profiles or unplug the receiver until this finishes.",
+    async () => {
+      setStatus(`Writing ${name} to slot ${slotNum} and switching...`);
+      try {
+        const res = await fetch('/api/push-slot', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ boot_id: currentBoot, slot: slotNum })
+        });
+        const data = await res.json();
+        reportPush(data, `Active: ${name} (slot ${slotNum})`);
+      } catch (e) {
+        toast('Push failed: ' + e.message, 'error');
+        setStatus('Push failed');
+      }
     });
-    const data = await res.json();
-    reportPush(data, `Active: ${name} (slot ${slotNum})`);
-  } catch (e) {
-    toast('Push failed: ' + e.message, 'error');
-    setStatus('Push failed');
-  }
 }
 
 function reportPush(data, okStatus) {
@@ -1352,24 +1398,28 @@ function refreshActiveSlot() {
 }
 
 async function switchSlot(slot) {
-  setStatus(`Switching to slot ${slot}...`);
-  toast('Switching profile...');
-  try {
-    const res = await fetch(`/api/switch-profile/${slot}`, { method: 'POST' });
-    const data = await res.json();
-    if (data.success) {
-      toast(data.message || 'Switched!', 'success');
-      setStatus(`Active: Profile ${slot + 1}`);
-      activeSlot = slot;
-      renderActiveSlots();
-    } else {
-      toast(data.error || 'Switch failed', 'error');
-      setStatus('Switch failed');
-    }
-  } catch (e) {
-    toast('Switch failed: ' + e.message, 'error');
-    setStatus('Switch failed');
-  }
+  await withMouseLock(
+    `Switching to profile ${slot + 1}...`,
+    "Telling the mouse to switch profiles. Don't unplug the receiver until this finishes.",
+    async () => {
+      setStatus(`Switching to slot ${slot}...`);
+      try {
+        const res = await fetch(`/api/switch-profile/${slot}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          toast(data.message || 'Switched!', 'success');
+          setStatus(`Active: Profile ${slot + 1}`);
+          activeSlot = slot;
+          renderActiveSlots();
+        } else {
+          toast(data.error || 'Switch failed', 'error');
+          setStatus('Switch failed');
+        }
+      } catch (e) {
+        toast('Switch failed: ' + e.message, 'error');
+        setStatus('Switch failed');
+      }
+    });
 }
 
 async function syncFromSwarm() {
@@ -1400,19 +1450,23 @@ async function pushToMouse() {
   const assigned = activeSlots.filter(s => s.profile && s.profile.id === selectedProfileId).map(s => s.slot);
   if (!assigned.length) { toast('Drag this profile onto an onboard slot (1-5) first', 'error'); return; }
 
-  setStatus(`Writing ${profile.name} to slot ${assigned.join(', ')}...`);
-  toast(`Writing ${profile.name} (about 15 s per slot)...`, 'info');
-  try {
-    const res = await fetch('/api/import-to-mouse', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ boot_id: currentBoot, profile_id: selectedProfileId })
+  await withMouseLock(
+    `Writing ${profile.name} to slot ${assigned.join(', ')}...`,
+    "Loading it onto the mouse (about 15 s per slot). Don't switch profiles or unplug the receiver until this finishes.",
+    async () => {
+      setStatus(`Writing ${profile.name} to slot ${assigned.join(', ')}...`);
+      try {
+        const res = await fetch('/api/import-to-mouse', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ boot_id: currentBoot, profile_id: selectedProfileId })
+        });
+        const data = await res.json();
+        reportPush(data, `${profile.name} written to slot ${assigned.join(', ')}`);
+      } catch (e) {
+        toast('Write failed: ' + e.message, 'error');
+        setStatus('Write failed');
+      }
     });
-    const data = await res.json();
-    reportPush(data, `${profile.name} written to slot ${assigned.join(', ')}`);
-  } catch (e) {
-    toast('Write failed: ' + e.message, 'error');
-    setStatus('Write failed');
-  }
 }
 
 async function releaseKeys() {
@@ -1436,19 +1490,23 @@ async function pushAllSlots() {
   const filled = activeSlots.filter(s => s.profile);
   if (!filled.length) { toast('No profiles assigned to slots', 'error'); return; }
   if (!confirm(`Write ${filled.length} profile(s) to the mouse? About 15 s per slot.`)) return;
-  setStatus(`Writing ${filled.length} slots...`);
-  toast(`Writing ${filled.length} slots (about ${15 * filled.length} s)...`, 'info');
-  try {
-    const res = await fetch('/api/import-to-mouse', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ boot_id: currentBoot })
+  await withMouseLock(
+    `Writing ${filled.length} slots...`,
+    `Loading ${filled.length} profiles onto the mouse (about ${15 * filled.length} s total). Don't switch profiles or unplug the receiver until this finishes.`,
+    async () => {
+      setStatus(`Writing ${filled.length} slots...`);
+      try {
+        const res = await fetch('/api/import-to-mouse', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ boot_id: currentBoot })
+        });
+        const data = await res.json();
+        reportPush(data, 'All assigned slots written');
+      } catch (e) {
+        toast('Write failed: ' + e.message, 'error');
+        setStatus('Write failed');
+      }
     });
-    const data = await res.json();
-    reportPush(data, 'All assigned slots written');
-  } catch (e) {
-    toast('Write failed: ' + e.message, 'error');
-    setStatus('Write failed');
-  }
 }
 
 // ── Status ─────────────────────────────────────────────────────────────────
@@ -1466,6 +1524,32 @@ function toast(msg, type = '') {
   el.className   = 'show' + (type ? ' ' + type : '');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.className = ''; }, 2500);
+}
+
+// ── Mouse busy lock ──────────────────────────────────────────────────────────
+// A push or profile switch rewrites the mouse's onboard memory over ~15 s. Two of
+// those must never overlap: a second write on top of a running one can corrupt a
+// profile or leave a modifier key stuck. While one runs we LOCK the UI — show the
+// "writing" overlay and refuse any new mouse operation until it finishes.
+let mouseBusy = false;
+
+async function withMouseLock(title, sub, fn) {
+  if (mouseBusy) {
+    toast('Mouse is busy — wait for the current write to finish', 'error');
+    return;
+  }
+  mouseBusy = true;
+  const t = document.getElementById('busy-title');
+  const s = document.getElementById('busy-sub');
+  if (t) t.textContent = title || 'Writing to the mouse...';
+  if (s) s.textContent = sub || '';
+  document.getElementById('busy-overlay').classList.add('show');
+  try {
+    return await fn();
+  } finally {
+    mouseBusy = false;
+    document.getElementById('busy-overlay').classList.remove('show');
+  }
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────

@@ -101,6 +101,22 @@ def load_slots():
 def save_slots(data):
     save_json(SLOTS_FILE, data)
 
+def load_active_slot():
+    """Onboard slot (0-4) the mouse was last set to by this app, or None if never set.
+    The mouse keeps its active profile across power cycles and this app is how profiles get
+    switched, so this is what the UI shows as 'currently on' at startup. It self-corrects on
+    the next push/switch. Stored alongside the slot maps in slots.json."""
+    v = load_json(SLOTS_FILE).get("active_slot")
+    return v if isinstance(v, int) and 0 <= v <= 4 else None
+
+def save_active_slot(slot):
+    """Remember the active onboard slot so the next launch can show what the mouse is on."""
+    if not (isinstance(slot, int) and 0 <= slot <= 4):
+        return
+    data = load_slots()
+    data["active_slot"] = slot
+    save_slots(data)
+
 def make_id(name):
     """Generate a URL-safe ID from a profile name."""
     slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
@@ -226,7 +242,7 @@ def get_slots(boot_id):
             resolved.append({"slot": i+1, "profile": prof_map[pid]})
         else:
             resolved.append({"slot": i+1, "profile": None})
-    return jsonify({"boot": boot_id, "slots": resolved})
+    return jsonify({"boot": boot_id, "slots": resolved, "active_slot": load_active_slot()})
 
 @app.route("/api/slots/<boot_id>/<int:slot>", methods=["PUT"])
 def set_slot(boot_id, slot):
@@ -355,6 +371,12 @@ def run_mouse_job(fn):
             except Exception:
                 pass
         out.setdefault("success", True)
+        # Remember which onboard slot the mouse is now on, so the next launch can show it.
+        if out.get("success") and isinstance(out.get("active_slot"), int):
+            try:
+                save_active_slot(out["active_slot"])
+            except Exception:
+                pass
         return out
     except TransportError as e:
         return {"success": False, "error": str(e)}

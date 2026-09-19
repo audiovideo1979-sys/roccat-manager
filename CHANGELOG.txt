@@ -1,6 +1,25 @@
 ROCCAT Manager Full — Changelog
 ================================
 
+@6 — 2026-09-19 (stuck-modifier fix, busy lock, active-profile memory)
+  - Stuck keyboard modifier fix: a mouse button bound to Ctrl/Alt/Shift/Win could leave
+    that modifier "held" in Windows after a profile switch (keyboard goes dead). New
+    kone_xp_air/winput.py release_modifiers() sends synthetic key-ups (ctypes SendInput,
+    no-op off Windows); run_mouse_job fires it after every mouse op, and a "Release stuck
+    keys" footer button + POST /api/release-modifiers give a one-click manual recovery
+    (the endpoint deliberately does NOT take MOUSE_LOCK so it works mid-push).
+  - Packaging fix: kone_xp_air.winput added to roccat_manager.spec hiddenimports — server.py
+    imports it at load, so without it the windowed exe closed on launch (ModuleNotFoundError).
+  - Busy lock: while a push/switch rewrites onboard memory (~15 s) the UI shows a "Writing
+    to the mouse..." overlay and refuses any new mouse operation, so two writes can't overlap
+    (an overlapping write can corrupt a profile or strand a modifier). Wraps push-slot,
+    push-to-mouse, push-all, and switch.
+  - Active-profile memory: the onboard slot the mouse was last set to is persisted
+    (slots.json "active_slot", written in run_mouse_job) and returned by GET /api/slots/{boot};
+    a fresh launch now highlights the profile the mouse is on instead of nothing.
+  - Keybind list gained the bare modifiers (Ctrl/Shift/Alt/Win + right variants) for AutoCAD.
+  - Tests: 94 pass (active-slot persistence + read-does-not-clobber added).
+
 @5 — 2026-09-19 (hardware confirmed + desktop app)
   - DIRECT WRITES CONFIRMED on the mouse (A/B variant B): our own handle changed
     a button with Swarm II out of the write path. Default transport is now Direct.

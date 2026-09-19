@@ -134,3 +134,29 @@ def test_release_endpoint_does_not_take_the_mouse_lock(server, client):
         assert r['success'] is True
     finally:
         server.MOUSE_LOCK.release()
+
+
+def test_active_slot_persists_so_a_fresh_launch_shows_it(server, client):
+    # a fresh install has no remembered active slot -> the UI shows nothing highlighted
+    r = client.get('/api/slots/boot1').get_json()
+    assert r['active_slot'] is None
+    # switching remembers it, and a later GET (i.e. a fresh app launch) reports it
+    assert client.post('/api/switch-profile/2').get_json()['success']
+    assert client.get('/api/slots/boot1').get_json()['active_slot'] == 2
+    assert server.load_active_slot() == 2                       # persisted to disk
+    # the mouse's active slot is one physical thing, independent of the boot map shown
+    assert client.get('/api/slots/boot2').get_json()['active_slot'] == 2
+    # a push moves it to the pushed slot
+    slots = server.load_slots()['boot1']
+    slot1 = next(i for i, pid in enumerate(slots) if pid) + 1
+    client.post('/api/push-slot', json={'boot_id': 'boot1', 'slot': slot1})
+    assert server.load_active_slot() == slot1 - 1
+
+
+def test_read_pages_does_not_clobber_the_remembered_active_slot(server, client):
+    assert client.post('/api/switch-profile/4').get_json()['success']
+    assert server.load_active_slot() == 4
+    # a diagnostic read returns no active_slot and must leave the remembered one alone
+    r = client.post('/api/mouse/read-pages', json={'cmd': 'profile', 'flag': 1}).get_json()
+    assert r['success']
+    assert server.load_active_slot() == 4

@@ -27,6 +27,19 @@
   `release_modifiers()` (ctypes SendInput, no-op off Windows) is called after every mouse job in
   `run_mouse_job`, and a "Release stuck keys" button (`POST /api/release-modifiers`, no mouse lock)
   clears it on demand. The feature stays; it's just made safe.
+  - Packaging: `kone_xp_air.winput` is in `roccat_manager.spec` `hiddenimports`; `server.py` imports it
+    at load, so without it the windowed exe closes on launch (ModuleNotFoundError, caught to startup.log).
+- Push/switch is a ~15 s onboard-memory write and two must never overlap (an overlapping write can
+  corrupt a profile or strand a modifier). The UI now shows a "Writing to the mouse..." overlay
+  (`#busy-overlay`, `withMouseLock()` in `index.html`) for the duration and refuses a second mouse
+  operation until it finishes. Server-side `MOUSE_LOCK` already serialised the HID handle; this is the
+  matching UI lock the user asked for ("lock the mouse for a couple of secs to load it").
+- Active-profile memory: the mouse keeps its active onboard slot across power cycles, but the app only
+  knew it after a push/switch, so a fresh launch highlighted nothing. The last slot set is now persisted
+  (`slots.json` key `active_slot`, written in `run_mouse_job`, read by `GET /api/slots/{boot}` →
+  `activeSlot` on load). It is "what this app last set", not a read-back from the mouse — a decoded
+  read-back of the mouse's current profile is still open (page reads are undecoded). Self-corrects on
+  the next push/switch.
 
 ## Where things stand (2026-09-19)
 
