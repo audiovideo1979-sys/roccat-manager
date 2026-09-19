@@ -163,34 +163,51 @@ class DirectHidTransport:
             raise TransportError('receiver (VID %04x PID %04x usage page %04x) not found' % (DONGLE_VID, DONGLE_PID, DONGLE_USAGE_PAGE))
         if isinstance(self.path, str):
             self.path = self.path.encode()
-        if self.backend == 'dll':
-            import ctypes
-            if hasattr(os, 'add_dll_directory'):
-                os.add_dll_directory(SWARM_DIR)
-            os.environ['PATH'] = SWARM_DIR + os.pathsep + os.environ.get('PATH', '')
-            dll = ctypes.CDLL(self.dll_path)
-            dll.hid_init.restype = ctypes.c_int
-            dll.hid_open_path.restype = ctypes.c_void_p
-            dll.hid_open_path.argtypes = [ctypes.c_char_p]
-            dll.hid_send_feature_report.restype = ctypes.c_int
-            dll.hid_send_feature_report.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
-            dll.hid_get_feature_report.restype = ctypes.c_int
-            dll.hid_get_feature_report.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
-            dll.hid_close.argtypes = [ctypes.c_void_p]
-            dll.hid_init()
-            dev = dll.hid_open_path(self.path)
-            if not dev:
-                raise TransportError('hid_open_path failed for %r' % self.path)
-            self.dll, self.dev = dll, dev
-        elif self.backend == 'hid':
-            import hid
-            dev = hid.device()
-            dev.open_path(self.path)
-            self.dev = dev
-        else:
-            raise ValueError('backend must be dll or hid')
-        self.log('opened %s via %s' % (self.path, self.backend))
-        return self
+        # 'auto' tries the bundled hidapi first (works without Swarm installed), then Swarm's DLL
+        backends = ['hid', 'dll'] if self.backend == 'auto' else [self.backend]
+        errors = []
+        for b in backends:
+            try:
+                if b == 'dll':
+                    self._open_dll()
+                elif b == 'hid':
+                    self._open_hid()
+                else:
+                    raise ValueError("backend must be 'hid', 'dll' or 'auto'")
+                self.backend = b
+                self.log('opened %s via %s' % (self.path, b))
+                return self
+            except Exception as e:
+                errors.append('%s: %s' % (b, e))
+                self.dev = None
+                self.dll = None
+        raise TransportError('could not open the receiver [%s]' % '; '.join(errors))
+
+    def _open_dll(self):
+        import ctypes
+        if hasattr(os, 'add_dll_directory') and os.path.isdir(SWARM_DIR):
+            os.add_dll_directory(SWARM_DIR)
+        os.environ['PATH'] = SWARM_DIR + os.pathsep + os.environ.get('PATH', '')
+        dll = ctypes.CDLL(self.dll_path)
+        dll.hid_init.restype = ctypes.c_int
+        dll.hid_open_path.restype = ctypes.c_void_p
+        dll.hid_open_path.argtypes = [ctypes.c_char_p]
+        dll.hid_send_feature_report.restype = ctypes.c_int
+        dll.hid_send_feature_report.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
+        dll.hid_get_feature_report.restype = ctypes.c_int
+        dll.hid_get_feature_report.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
+        dll.hid_close.argtypes = [ctypes.c_void_p]
+        dll.hid_init()
+        dev = dll.hid_open_path(self.path)
+        if not dev:
+            raise TransportError('hid_open_path failed for %r' % self.path)
+        self.dll, self.dev = dll, dev
+
+    def _open_hid(self):
+        import hid
+        dev = hid.device()
+        dev.open_path(self.path)
+        self.dev = dev
 
     def run(self, ops):
         if self.dev is None:

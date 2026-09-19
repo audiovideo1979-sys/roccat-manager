@@ -1,6 +1,18 @@
 ROCCAT Manager Full — Changelog
 ================================
 
+@5 — 2026-09-19 (hardware confirmed + desktop app)
+  - DIRECT WRITES CONFIRMED on the mouse (A/B variant B): our own handle changed
+    a button with Swarm II out of the write path. Default transport is now Direct.
+  - DirectHidTransport backend "auto": bundled hidapi first, Swarm's KONE_XP_AIR.dll
+    fallback; send retry for transient rc=-1.
+  - Native desktop app: desktop.py (pywebview window, no browser/localhost),
+    roccat_manager.spec + build.bat -> single dist\ROCCAT Manager.exe. server.py is
+    bundle-aware (templates/static via sys._MEIPASS) and stores profiles under
+    %APPDATA%\ROCCAT Manager.
+  - Hardware-path review applied (frida 17 PID lookup, abort-before-commit,
+    executor census guard, ab_test transcript + distinct-letter variants).
+
 @4 — 2026-09-19 (cloud session, no hardware)
   - kone_xp_air/: hardware-independent protocol package (packets, 125-byte button
     block = 3 header + 30 x 4-byte entries + sum16, 75-byte profile block, action

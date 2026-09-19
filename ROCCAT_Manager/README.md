@@ -1,5 +1,11 @@
 # ROCCAT Manager — Kone XP Air
 
+## Build the desktop app (.exe)
+On Windows, double-click **`build.bat`** in the repo root. It installs what it needs and produces
+**`dist\ROCCAT Manager.exe`** — a normal app window (no browser, no localhost), like Swarm. Double-click
+it or pin it to the taskbar. Your profiles live in `%APPDATA%\ROCCAT Manager\profiles`. If the window
+does not appear, run `build.bat debug` for a version that prints the error.
+
 Profile manager for the Kone XP Air that writes to the mouse without opening Swarm II.
 
 ## First time

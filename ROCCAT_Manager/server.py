@@ -9,28 +9,65 @@ import os
 import sys
 import re
 import io
+import shutil
 import threading
 import zipfile
 from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, send_file
 
+FROZEN = getattr(sys, "frozen", False)   # running as a PyInstaller-built .exe
+
+
+def _bundle_base():
+    # PyInstaller onefile extracts bundled data to sys._MEIPASS; in dev it's the source tree
+    if FROZEN and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).parent
+
+
+def _user_data_dir():
+    root = os.environ.get("APPDATA") or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~")
+    d = Path(root) / "ROCCAT Manager"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 # ── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR      = Path(__file__).parent
 REPO_ROOT     = BASE_DIR.parent
-PROFILES_DIR  = BASE_DIR / "profiles"
-STATIC_DIR    = BASE_DIR / "static"
-TEMPLATES_DIR = BASE_DIR / "templates"
+BUNDLE_DIR    = _bundle_base()                 # where templates/static/seed data live
+STATIC_DIR    = BUNDLE_DIR / "static"
+TEMPLATES_DIR = BUNDLE_DIR / "templates"
+# Profiles are user data: inside the exe the bundle is read-only, so persist them under %APPDATA%.
+PROFILES_DIR  = (_user_data_dir() / "profiles") if FROZEN else (BASE_DIR / "profiles")
+SEED_DIR      = BUNDLE_DIR / "profiles"        # defaults shipped in the bundle, copied on first run
 
 STORED_FILE = PROFILES_DIR / "stored.json"
 SLOTS_FILE  = PROFILES_DIR / "slots.json"
 MOUSE_CONFIG_FILE = PROFILES_DIR / "mouse_config.json"
 
-# kone_xp_air (protocol + transports) lives at the repo root, next to this folder
-if str(REPO_ROOT) not in sys.path:
+
+def seed_profiles():
+    """On first run of the packaged app, copy the shipped default profiles into the user folder."""
+    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+    for name in ("stored.json", "slots.json"):
+        dst, src = PROFILES_DIR / name, SEED_DIR / name
+        if not dst.exists() and src.exists():
+            try:
+                shutil.copy(src, dst)
+            except OSError:
+                pass
+
+
+# kone_xp_air (protocol + transports) lives at the repo root in dev; it is bundled in the exe
+if not FROZEN and str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from kone_xp_air import protocol as kxp_protocol, actions as kxp_actions, datfile as kxp_datfile  # noqa: E402
 from kone_xp_air.session import KoneXPAir  # noqa: E402
 from kone_xp_air.transport import make_transport, TransportError, is_swarm_running, format_results, kill_swarm  # noqa: E402
+
+if FROZEN:
+    seed_profiles()
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder=str(STATIC_DIR), template_folder=str(TEMPLATES_DIR))
@@ -250,8 +287,8 @@ def export_all_dat(boot_id):
 
 # ── Mouse access (kone_xp_air) ───────────────────────────────────────────────
 DEFAULT_MOUSE_CONFIG = {
-    "transport": "frida",      # "frida" = through Swarm II's own handle (known good); "direct" = our own handle
-    "backend": "dll",          # direct only: "dll" (Swarm's bundled hidapi, proven for DPI) or "hid"
+    "transport": "direct",     # "direct" = our own handle (confirmed on hardware); "frida" = via Swarm II
+    "backend": "auto",         # direct only: "auto" (bundled hidapi, else Swarm's DLL), or force "hid"/"dll"
     "path": None,              # direct only: HID path; None = dongle PID 0x5017, usage page 0xff03
     "activate_b5": 1,          # byte 5 of the 0x4e activate packet: 1 (working replay) or "slot"
     "header_mode": "zero",     # button block header: "zero" (working capture) or "dat" (07 7d 00)

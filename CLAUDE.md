@@ -24,10 +24,13 @@ its USB receiver (VID 0x10F5, receiver PID 0x5017).
   `automation/` are legacy and not on the push path.
 
 ## Run
-- `ROCCAT_Manager/Launch.bat` or `python ROCCAT_Manager/server.py` (opens http://localhost:5555).
-- Transport "Frida" (default) needs Swarm II running (tray is fine). "Direct" needs nothing but the
-  receiver — switch to it once `tools/ab_test_buttons.py` shows it works.
-- Deps: `pip install flask frida hidapi pytest`. 64-bit Python (matches `KONE_XP_AIR.dll`).
+- **Desktop app:** `build.bat` (Windows) packages `desktop.py` into `dist\ROCCAT Manager.exe` — a native
+  WebView window (pywebview), no browser, no localhost URL. `build.bat debug` builds a console version.
+  Profiles persist under `%APPDATA%\ROCCAT Manager\profiles`.
+- **Dev:** `python desktop.py` (native window) or `python ROCCAT_Manager/server.py` (browser at :5555).
+- Transport default is now **Direct** (confirmed on hardware 2026-09-19), backend **auto** (bundled
+  hidapi, else Swarm's DLL). "Frida" (via Swarm) stays available in the sidebar.
+- Deps: `pip install flask frida hidapi pywebview pythonnet pyinstaller pytest`. 64-bit Python.
 
 ## REST API (port 5555)
 | Method | Path | Description |
