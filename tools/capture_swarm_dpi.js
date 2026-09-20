@@ -25,6 +25,9 @@ if (!sendAddr) {
     Interceptor.attach(sendAddr, {
         onEnter: function (args) {
             var len = args[2].toInt32();
+            // Skip the continuous lighting stream (06 01 4d ...) so the DPI write isn't buried.
+            var b1 = args[1].add(1).readU8(), b2 = args[1].add(2).readU8();
+            if (b1 === 0x01 && b2 === 0x4d) return;
             send({ dir: 'SEND', len: len, data: hex(args[1], len) });
         }
     });
