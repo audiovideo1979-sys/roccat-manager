@@ -22,18 +22,18 @@ if (!sendAddr) {
     send({ line: 'ERROR: hid_send_feature_report not found in KONE_XP_AIR.dll' });
 } else {
     // int hid_send_feature_report(hid_device *dev, const unsigned char *data, size_t length)
+    // Show ONLY the profile-write / switch commands so the DPI sequence is short and unambiguous:
+    //   0x45 profile-select, 0x46 profile block (page selects, writes, reads, commit), 0x47 buttons,
+    //   0x49 commit, 0x4e activate.  Hidden: 0x44 status polling, 0x4d lighting, 06 00 receiver pings,
+    //   and all GET responses (read REQUESTS still show as 06 01 46 07 sends).
+    var KEEP = [0x45, 0x46, 0x47, 0x49, 0x4e];
     Interceptor.attach(sendAddr, {
         onEnter: function (args) {
-            var len = args[2].toInt32();
-            // Skip the continuous lighting stream (06 01 4d ...) so the DPI write isn't buried.
             var b1 = args[1].add(1).readU8(), b2 = args[1].add(2).readU8();
-            if (b1 === 0x01 && b2 === 0x4d) return;
+            if (b1 !== 0x01 || KEEP.indexOf(b2) < 0) return;
+            var len = args[2].toInt32();
             send({ dir: 'SEND', len: len, data: hex(args[1], len) });
         }
-    });
-    if (getAddr) Interceptor.attach(getAddr, {
-        onEnter: function (args) { this.buf = args[1]; this.len = args[2].toInt32(); },
-        onLeave: function () { send({ dir: 'GET ', len: this.len, data: hex(this.buf, this.len) }); }
     });
     send({ line: 'hooked KONE_XP_AIR.dll — change the DPI in Swarm II now and click apply' });
 }
