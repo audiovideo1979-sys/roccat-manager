@@ -314,10 +314,12 @@ PROFILE_PAGES = 3
 DPI_MIN, DPI_MAX = 50, 19000
 DPI_STAGES = 5
 
-# Byte 5 and bytes 31-32 are matched to Swarm II's real .dat exports (WWM/Main Test/Grounded all agree):
-# byte 5 = 0x02 (we used to send 0x1f), byte 31 = 0x01, byte 32 = 0x00 (we used to send 0x06 0xff).
-# The old values came from roccat_write.build_profile, which was assumed to change DPI but never actually
-# verified — the mouse rejects that block (confirmed on hardware 2026-09-19, DPI write does nothing).
+# Bytes 31-32 = 01 00 (the real DPI-write bug: roccat_write used 06 ff here, which the mouse rejected —
+# DPI-set-in-app did nothing). This is matched to a live Frida capture of Swarm II writing DPI on the
+# wire (capture_swarm_dpi.py, 2026-09-20), which also confirmed byte 5 = 0x1f and the commit checksum
+# is over 76 bytes (block + the 0xff commit byte). NOTE: Swarm's exported .dat files store this block
+# differently (byte 5 = 0x02, and a real colour-B instead of 0xff), so the .dat is NOT the wire form —
+# parse() reads whatever the source has; the defaults below are the WIRE form we send.
 _PROFILE_MID = bytes([0x00, 0x00, 0x03, 0x0a, 0x01, 0x00, 0x05, 0x00, 0x00])
 _PROFILE_LED_ENTRY = bytes([0x14, 0xFF, 0x00, 0x48, 0xFF])
 _PROFILE_TAIL = bytes([0x01, 0x64, 0xFF, 0xFF])
@@ -329,7 +331,7 @@ class ProfileBlock:
     dpi_x: list = field(default_factory=lambda: [800] * DPI_STAGES)
     dpi_y: list = None
     active_stage: int = 0
-    byte5: int = 0x02
+    byte5: int = 0x1F
     mid: bytes = _PROFILE_MID
     leds: bytes = _PROFILE_LED_ENTRY * 7
     tail: bytes = _PROFILE_TAIL

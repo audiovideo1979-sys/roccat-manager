@@ -44,19 +44,37 @@ def test_write_buttons_equals_inject_full_js_replay():
     assert strip_marks(ops) == expected
 
 
+def test_profile_write_matches_the_swarm_dpi_capture():
+    """Byte-for-byte against a live Frida capture of Swarm II writing DPI 3000 to slot 1
+    (tools/capture_swarm_dpi.py, 2026-09-20). This is the write the mouse ACCEPTS; the earlier forms
+    (roccat_write's bytes 31-32 = 06 ff, and the .dat's byte 5 = 0x02) did not change DPI on hardware."""
+    wire = bytes.fromhex((
+        '06 4e 01 06 06 1f 00 b8 0b 20 03 20 03 20 03 20 03 20 03 20 03 20 03 20 03'   # page 0
+        '20 03 00 00 03 0a 01 00 05 00 00 14 ff 00 48 ff 14 ff 00 48 ff 14 ff 00 48'   # page 1
+        'ff 14 ff 00 48 ff 14 ff 00 48 ff 14 ff 00 48 ff 14 ff 00 48 ff 01 64 ff ff'   # page 2
+    ).replace(' ', ''))
+    blk = P.ProfileBlock(slot=1, dpi_x=[3000, 800, 800, 800, 800], dpi_y=[800, 800, 800, 800, 800])
+    assert blk.to_bytes() == wire                                   # exact block
+    sends = S.only_sends(S.write_profile_block(blk.to_bytes(), blk.commit_color_b()))
+    assert b''.join(s[5:30] for s in sends if s[4] == 0x19) == wire  # 3 page writes reconstruct it
+    assert all(s[6] == 0x01 for s in sends if s[4] == 0x02)         # every page select uses flag 0x01
+    commit = next(s for s in sends if s[4] == 0x03)
+    assert commit[:8].hex(' ') == '06 01 46 06 03 ff 69 16'         # captured commit (cs16 over block+0xff)
+
+
 def test_write_profile_block_commits_the_swarm_way():
-    """Profile write: 3 page writes then a commit with colour-B in byte 5 and the checksum over the 76
-    bytes (block + colour-B) — the form Swarm's .dat exports use. The old 0xff/75-byte commit is what
-    the mouse was rejecting (DPI-set-in-app did nothing)."""
+    """Profile write: 3 page writes then a commit with byte 5 = 0xff and the checksum over the 76 bytes
+    (block + that 0xff) — matching the Swarm DPI capture. The old 0xff/75-byte commit and the 06 ff mid
+    bytes are what the mouse was rejecting (DPI-set-in-app did nothing)."""
     block = P.ProfileBlock.from_dpi(2, 950).to_bytes()
-    commit_b = 0xFF                                     # default colour-B
+    commit_b = 0xFF                                     # 0xff on the wire (the block's colour-B default)
     pages = [block[i * 25:(i + 1) * 25] for i in range(3)]
     cs = (sum(block) + commit_b) & 0xFFFF               # checksum over 76 bytes
     expected = []
     for pg in range(3):
-        expected += [('send', pk('06 01 46 06 02 %02x 00' % pg), 0.0), ('sleep', b'', 0.05)] + HS()
+        expected += [('send', pk('06 01 46 06 02 %02x 01' % pg), 0.0), ('sleep', b'', 0.05)] + HS()
         expected += [('send', pk('06 01 46 06 19 ' + pages[pg].hex(' ')), 0.0), ('sleep', b'', 0.05)] + HS()
-    expected += [('send', pk('06 01 46 06 02 03 00'), 0.0), ('sleep', b'', 0.05)] + HS()
+    expected += [('send', pk('06 01 46 06 02 03 01'), 0.0), ('sleep', b'', 0.05)] + HS()
     expected += [('send', pk('06 01 46 06 03 %02x %02x %02x' % (commit_b, cs & 0xFF, cs >> 8)), 0.0), ('sleep', b'', 0.05)] + HS()
     assert strip_marks(S.write_profile_block(block, commit_b)) == expected
 

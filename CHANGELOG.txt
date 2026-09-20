@@ -25,22 +25,19 @@ ROCCAT Manager Full — Changelog
     bare "Win" option from the button menu; the experimental encoding was reverted. For a Start-menu
     button use Ctrl+Esc; Win+<key> shortcuts (Show Desktop, Snipping Tool) already work.
   - Tests: 97 pass (active-slot persistence, read-does-not-clobber, Escape binds as a plain key).
-  - DPI-set-in-app "does nothing": ROOT-CAUSED and fixed. The "Read back" diagnostic confirmed the
-    mouse REJECTS the 0x46 profile block. Comparing our block to Swarm's own .dat exports
-    (WWM/Main Test/Grounded) showed ours was wrong: byte 5 = 0x1f (should be 0x02), bytes 31-32 =
-    06 ff (should be 01 00), and the commit summed 75 bytes with 0xff in the packet (Swarm sums the
-    76 bytes block+colour-B and puts colour-B in byte 5). The old bytes came from roccat_write, assumed
-    to work in April but never verified. ProfileBlock/profile_commit_packet/write_profile_block now
-    reproduce Swarm's real block byte-for-byte (pinned in test_datfile + test_protocol against the .dat
-    exports). That content fix alone did NOT apply on hardware (rebuilt+pushed, nothing changed), so the
-    write SEQUENCE was also wrong: write_profile_block selected each page with flag 0x01 (the READ flag)
-    instead of 0x00 (WRITE) — the proven button write (inject_full.js) selects 0x47 pages with 0x00.
-    Changed the profile page-select flag to 0x00. PENDING hardware re-verify (pointer speed should change
-    on push); if it still doesn't apply, next is a Frida capture of Swarm's DPI write to match exactly.
+  - DPI-set-in-app "does nothing": ROOT-CAUSED against a live Frida capture of Swarm II writing DPI
+    (tools/capture_swarm_dpi.py). The 0x46 profile block roccat_write generated had bytes 31-32 = 06 ff;
+    Swarm's wire write has 01 00 there, and the mouse rejects the block otherwise. Fixed: bytes 31-32 ->
+    01 00, byte 5 = 0x1f, page-select flag 0x01, commit 06 01 46 06 03 ff <cs16 over the 76 bytes =
+    block + 0xff>. ProfileBlock/write_profile_block now reproduce the captured wire write byte-for-byte,
+    pinned in test_sequences (test_profile_write_matches_the_swarm_dpi_capture) and test_protocol.
+    (Detour: the .dat FILE stores this block differently — byte 5 = 0x02, a real colour-B — so it is NOT
+    the wire form; matching the .dat first was a wrong turn, corrected once the wire was captured.)
+    tools/capture_swarm_dpi.py + .js: Frida logger that records Swarm's HID writes (filters the 0x4d
+    lighting stream). PENDING final hardware re-verify (pointer speed should change on push).
   - Added toward RGB-off (same block): "Toggle RGB" button option (wire 00 00 0b 08, in the confirmed
     0x47 block) turns onboard lighting off with a button press today; "Read back" diagnostic next to the
-    DPI field checks whether the profile write reached onboard memory. Persistent lighting-off (default)
-    is next, once the DPI fix is confirmed on hardware.
+    DPI field. Persistent lighting-off (default) is next, once DPI is confirmed on hardware.
 
 @5 — 2026-09-19 (hardware confirmed + desktop app)
   - DIRECT WRITES CONFIRMED on the mouse (A/B variant B): our own handle changed

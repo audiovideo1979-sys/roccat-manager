@@ -132,16 +132,17 @@ def test_describe():
     assert 'write page' in P.describe(P.write_page_packet(P.CMD_PROFILE, CAP[:25]))
 
 
-# ── profile (DPI) block: must equal Swarm II's real .dat form ──
-# The old test pinned roccat_write.build_profile ("proven on hardware"), but that block is REJECTED by
-# the mouse (confirmed 2026-09-19: DPI-set-in-app does nothing, read-back doesn't contain it). The real
-# form comes from Swarm's own .dat exports (WWM/Main Test/Grounded): byte 5 = 0x02, bytes 31-32 = 01 00,
-# and the commit checksum is over the 76 bytes (block + colour-B). See test_datfile for the .dat pin.
+# ── profile (DPI) block: must equal Swarm II's real WIRE write ──
+# The old test pinned roccat_write.build_profile, whose block the mouse REJECTS (DPI-set-in-app did
+# nothing). The real form is a live Frida capture of Swarm II writing DPI (capture_swarm_dpi.py,
+# 2026-09-20): byte 5 = 0x1f, bytes 31-32 = 01 00, page-select flag 0x01, and the commit is
+# 06 01 46 06 03 ff <cs16 over the 76 bytes = block + that 0xff>. (Swarm's .dat FILE stores byte 5 as
+# 0x02 with a real colour-B — a different serialisation, not the wire; see test_sequences for the wire pin.)
 
 def reference_swarm_profile(dpi_values, profile_slot=0, active_stage=0, color=(0xFF, 0xFF, 0xFF)):
-    """The real Swarm II profile block layout (its .dat exports reproduce byte-for-byte)."""
+    """The real Swarm II profile block as written on the wire (Frida capture)."""
     p = bytearray(75)
-    p[0] = 0x06; p[1] = 0x4E; p[2] = profile_slot; p[3] = 0x06; p[4] = 0x06; p[5] = 0x02; p[6] = active_stage
+    p[0] = 0x06; p[1] = 0x4E; p[2] = profile_slot; p[3] = 0x06; p[4] = 0x06; p[5] = 0x1F; p[6] = active_stage
     for i in range(5):
         dpi = dpi_values[i] if i < len(dpi_values) else dpi_values[-1]
         struct.pack_into('<H', p, 7 + i * 2, dpi)

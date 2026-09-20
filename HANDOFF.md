@@ -61,15 +61,21 @@
   actually verified. `ProfileBlock` / `profile_commit_packet` / `sequences.write_profile_block` now
   reproduce Swarm's real block byte-for-byte, pinned in `tests/test_datfile.py`
   (`test_profile_block_reproduces_swarm_main_blocks`) and `tests/test_protocol.py` against the .dat.
-  DPI X is raw LE16 (correct); DPI Y is set = X.
-  **Content fix was not enough — the write SEQUENCE was also wrong.** After rebuild+push, nothing
-  changed on the mouse (no DPI, no pink). `write_profile_block` selected each page with **flag 0x01**
-  (the READ flag — `read_pages` and profile-switch reads use 0x01), unlike the proven button write,
-  which selects 0x47 pages with **flag 0x00** (`inject_full.js`). Changed the profile page-select flag
-  to **0x00** (WRITE). **Verify on hardware:** set DPI 3000, push → pointer speed should change (the
-  real oracle; the Read-back decode is unproven). If it STILL doesn't apply, we have no captured 0x46
-  write — capture Swarm changing DPI (Frida logger on hid_send/get_feature_report, 0x4d filter off) and
-  match its exact page/commit/activation sequence. Do NOT keep guessing.
+  **RESOLVED against a live capture (2026-09-20).** `tools/capture_swarm_dpi.py` recorded Swarm II's
+  actual DPI write on the wire. The real bug was the block's **bytes 31-32**: roccat_write wrote `06 ff`,
+  Swarm writes `01 00`, and the mouse rejects the block otherwise. The captured wire write (DPI 3000,
+  slot 1) is exactly:
+    - block byte 5 = **0x1f**, bytes 27-35 mid = `00 00 03 0a 01 00 05 00 00`, LEDs `14 ff 00 48 ff`×7,
+      tail `01 64 ff ff`; DPI X/Y raw LE16.
+    - page-select flag **0x01**; three page writes; then commit **`06 01 46 06 03 ff <cs>`** where
+      cs = sum16 over the **76 bytes** = the 75-byte block **+ the 0xff commit byte** (0x1669 for that
+      block; verified). `ProfileBlock`+`write_profile_block` reproduce it byte-for-byte, pinned in
+      `tests/test_sequences.py::test_profile_write_matches_the_swarm_dpi_capture`.
+  **Wire vs .dat:** the .dat FILE serialises the same block with byte 5 = 0x02 and a real colour-B (cs
+  over block+colourB); the WIRE uses byte 5 = 0x1f and 0xff. They are different — `parse()` reads what a
+  source has; `from_dpi` defaults to the wire form. Matching the .dat first was a wrong turn.
+  **Still to confirm on hardware:** rebuild, set DPI 3000, push → pointer speed should change and the
+  mouse should take the block (its LEDs go solid, since we write the pink block). Then do RGB-off.
 - **RGB off — still open, but unblocked.** The LEDs live in the same 0x46 block (7×5 entries at 36-70,
   hardcoded pink `14 ff 00 48 ff`), so once the block is accepted the app can set them. We have no
   Swarm "lighting off" export, and the LED-entry layout has two conflicting readings
