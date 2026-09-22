@@ -136,6 +136,16 @@ def test_release_endpoint_does_not_take_the_mouse_lock(server, client):
         server.MOUSE_LOCK.release()
 
 
+def test_data_dir_override_points_at_a_shared_folder(server, monkeypatch, tmp_path):
+    # ROCCAT_MANAGER_DATA lets both dual-boot installs share one profiles folder (e.g. Google Drive).
+    shared = tmp_path / 'gdrive' / 'ROCCAT Manager'
+    monkeypatch.setenv('ROCCAT_MANAGER_DATA', str(shared))
+    assert server._user_data_dir() == shared and shared.is_dir()
+    # without it, it falls back to the per-user location (not the shared folder)
+    monkeypatch.delenv('ROCCAT_MANAGER_DATA')
+    assert server._user_data_dir() != shared
+
+
 def test_active_slot_persists_so_a_fresh_launch_shows_it(server, client):
     # a fresh install has no remembered active slot -> the UI shows nothing highlighted
     r = client.get('/api/slots/boot1').get_json()

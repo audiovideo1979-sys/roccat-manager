@@ -26,6 +26,17 @@ def _bundle_base():
 
 
 def _user_data_dir():
+    # Set ROCCAT_MANAGER_DATA to a shared folder (e.g. a Google Drive / OneDrive path) and every install
+    # that points there reads/writes the SAME profiles — that's how the two dual-boot sides stay in sync.
+    # If the shared folder can't be reached (drive not mounted yet), fall back to the per-user location.
+    override = os.environ.get("ROCCAT_MANAGER_DATA")
+    if override:
+        try:
+            d = Path(override)
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+        except OSError:
+            pass
     root = os.environ.get("APPDATA") or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~")
     d = Path(root) / "ROCCAT Manager"
     d.mkdir(parents=True, exist_ok=True)

@@ -26,7 +26,9 @@ its USB receiver (VID 0x10F5, receiver PID 0x5017).
 ## Run
 - **Desktop app:** `build.bat` (Windows) packages `desktop.py` into `dist\ROCCAT Manager.exe` — a native
   WebView window (pywebview), no browser, no localhost URL. `build.bat debug` builds a console version.
-  Profiles persist under `%APPDATA%\ROCCAT Manager\profiles`.
+  Profiles persist under `%APPDATA%\ROCCAT Manager\profiles`, or under `ROCCAT_MANAGER_DATA` if that
+  env var is set — point both dual-boot installs at one Google Drive folder to keep profiles in sync
+  (see `SYNC_SETUP.md`).
 - **Dev:** `python desktop.py` (native window) or `python ROCCAT_Manager/server.py` (browser at :5555).
 - Transport default is now **Direct** (confirmed on hardware 2026-09-19), backend **auto** (bundled
   hidapi, else Swarm's DLL). "Frida" (via Swarm) stays available in the sidebar.
