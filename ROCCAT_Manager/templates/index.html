@@ -855,21 +855,30 @@ function switchBoot(bootId) {
 // Every write tells the server which profiles this page loaded: the built-in examples (the shared Google Drive
 // folder had none yet) or saved ones. If this side's real profiles arrived from Drive while the page was open,
 // the server refuses the write (409) instead of letting example data overwrite them, and the page reloads.
-let profilesSource = 'saved';
+let profilesSource = 'saved';   // 'none' (built-in examples, nothing saved yet), 'examples' or 'saved'
+let reloadPending = false;      // once a write was refused, every later one is too (a queued autosave included)
 const _plainFetch = window.fetch.bind(window);
 window.fetch = async (url, opts = {}) => {
   const isWrite = typeof url === 'string' && url.startsWith('/api/')
                   && (opts.method || 'GET').toUpperCase() !== 'GET';
+  if (isWrite && reloadPending) {
+    return new Response(JSON.stringify({ success: false, reload: true, error: 'Reloading your profiles...' }),
+                        { status: 409, headers: { 'Content-Type': 'application/json' } });
+  }
   if (isWrite) {
     opts = Object.assign({}, opts, { headers: Object.assign({}, opts.headers || {}, { 'X-Profiles-Source': profilesSource }) });
   }
   const res = await _plainFetch(url, opts);
   if (isWrite && res.status === 409) {
     const data = await res.clone().json().catch(() => ({}));
-    if (data.reload) {
+    if (data.reload && !reloadPending) {
       toast(data.error || 'Your profiles just arrived from Google Drive - reloading', 'error');
+      setStatus('Reloading your profiles from Google Drive...');
+      reloadPending = true;       // after the toast/status above: from here on both stay as they are
       setTimeout(() => location.reload(), 3000);
     }
+  } else if (isWrite && res.ok && profilesSource === 'none' && res.headers.get('X-Profiles-Source') === 'examples') {
+    profilesSource = 'examples';  // this page's own first save started the shared set
   }
   return res;
 };
@@ -885,7 +894,7 @@ async function apiFetch(method, path, body) {
 async function loadStored() {
   const data = await apiFetch('GET', '/stored');
   storedProfiles = data.profiles || [];
-  profilesSource = data.source || 'saved';
+  if (!reloadPending) profilesSource = data.source || 'saved';
   renderStoredList();
   // If selected profile no longer exists, deselect
   if (selectedProfileId && !storedProfiles.find(p => p.id === selectedProfileId)) {
@@ -1631,6 +1640,7 @@ async function pushAllSlots() {
 
 // ── Status ─────────────────────────────────────────────────────────────────
 function setStatus(msg) {
+  if (reloadPending) return;
   document.getElementById('status-text').textContent = msg;
   const dot = document.getElementById('status-dot');
   dot.className = 'status-dot' + (msg.includes('Error') || msg.includes('failed') ? ' warn' : '');
@@ -1639,6 +1649,7 @@ function setStatus(msg) {
 // ── Toast ──────────────────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg, type = '') {
+  if (reloadPending) return;      // keep the "nothing was changed, reloading" message up until the reload
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className   = 'show' + (type ? ' ' + type : '');

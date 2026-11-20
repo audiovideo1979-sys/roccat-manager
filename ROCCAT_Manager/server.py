@@ -142,7 +142,7 @@ def _fingerprint(folder):
 
 def _note_state(note):
     try:
-        for line in note.read_text().splitlines():
+        for line in note.read_text(encoding="utf-8", errors="replace").splitlines():
             if line.startswith("state: "):
                 return line[len("state: "):].strip()
     except OSError:
@@ -162,7 +162,7 @@ def _write_moved_note(local_profiles, shared_profiles):
         (local_profiles / MOVED_NOTE).write_text(
             "ROCCAT Manager keeps profiles in the Google Drive folder\n  %s\nso both boots share them. "
             "Anything in this folder is this PC's own old copy, kept as a backup.\n\nstate: %s\n"
-            % (shared_profiles, _fingerprint(local_profiles)))
+            % (shared_profiles, _fingerprint(local_profiles)), encoding="utf-8")
     except OSError:
         pass
 
@@ -193,10 +193,14 @@ def migrate_local_profiles(shared_profiles, local_profiles, seed_dir, stamp=None
                 _write_moved_note(local_profiles, shared_profiles)
                 return None
             return "not-merged"
-        if has_real_profiles(shared_profiles, seed_dir):
+        if recorded is None:
+            _write_moved_note(local_profiles, shared_profiles)       # add the fingerprint to an older note
+        shared_data = _read_json_file(shared_profiles / "stored.json")
+        if not (isinstance(shared_data, dict) and shared_data.get(FROM_DEFAULTS)):
             return None                # connected before, nothing changed here since
-        # this PC's own profiles were brought over before, but the shared folder no longer holds real ones
-        # (e.g. Google Drive kept the other side's copy started from the examples): bring them in again
+        # this PC's own profiles were brought over before, but Google Drive now holds the other side's copy
+        # started from the examples instead (an edit there before the upload arrived): bring them in again.
+        # Not when the shared file is merely missing: Drive may just not have caught up yet.
     if _read_json_file(local_stored) is None:
         return "not-merged"            # damaged: don't spread it to the other side; the user is told instead
     if has_real_profiles(shared_profiles, seed_dir):
@@ -260,8 +264,8 @@ def prepare_profiles(local_profiles=None):
         local_profiles = _local_data_dir() / "profiles" if local_profiles is None else local_profiles
         try:
             return migrate_local_profiles(PROFILES_DIR, local_profiles, SEED_DIR)
-        except OSError:
-            return "copy-failed"       # shown in the sidebar; the next launch tries again
+        except (OSError, ValueError):
+            return "copy-failed"       # shown in the sidebar; the next launch tries again (never block startup)
     seed_profiles()
     return None
 
@@ -299,11 +303,12 @@ def _profile_file(path):
     return path
 
 def profiles_source():
-    """"examples" while a shared folder holds no profiles of anyone's own (nothing saved yet, or a set started
-    from the built-in examples), else "saved". The page sends back what it loaded with every write."""
+    """What a page loading profiles now would get: "none" (shared folder with nothing saved yet: the bundled
+    examples), "examples" (a shared set started from the examples), or "saved". The page sends back what it
+    loaded with every write; a write from a page whose profiles are out of date is refused."""
     if DATA_HOW in ("shared", "env"):
         if not STORED_FILE.exists():
-            return "examples"
+            return "none"
         data = _read_json_file(STORED_FILE)
         if isinstance(data, dict) and data.get(FROM_DEFAULTS):
             return "examples"
@@ -404,17 +409,28 @@ def get_stored():
 # Writes that are harmless whatever profiles the page holds (keyboard fix, settings, diagnostics, a plain switch)
 _ANY_PAGE_MAY_WRITE = ("/api/release-modifiers", "/api/mouse/config", "/api/mouse/read-pages", "/api/switch-profile/")
 
+def _is_profile_write():
+    return (request.method in ("POST", "PUT", "DELETE") and request.path.startswith("/api/")
+            and not request.path.startswith(_ANY_PAGE_MAY_WRITE))
+
 @app.before_request
-def _refuse_writes_from_a_page_still_on_the_examples():
-    # The page opened before Google Drive delivered this side's profiles and still shows the built-in examples,
-    # which share ids with the real set: a save now would write example data over a real profile.
-    if (request.method in ("POST", "PUT", "DELETE") and request.path.startswith("/api/")
-            and not request.path.startswith(_ANY_PAGE_MAY_WRITE)
-            and request.headers.get("X-Profiles-Source") == "examples" and profiles_source() == "saved"):
+def _refuse_writes_from_a_page_with_out_of_date_profiles():
+    # e.g. the page opened before Google Drive delivered this side's profiles and still shows the built-in
+    # examples, which share ids with the real set: a save now would write example data over a real profile.
+    # A request without the header (tests, scripts) is not checked.
+    sent = request.headers.get("X-Profiles-Source")
+    if _is_profile_write() and sent is not None and sent != profiles_source():
         return jsonify({"success": False, "reload": True,
                         "error": "Your profiles just arrived from Google Drive, so nothing was changed. "
                                  "Reloading them now - then make that change again."}), 409
     return None
+
+@app.after_request
+def _tell_the_page_what_its_write_left(response):
+    # the page's own first save in an empty shared folder turns "none" into "examples"; it follows along
+    if _is_profile_write() and response.status_code < 400:
+        response.headers["X-Profiles-Source"] = profiles_source()
+    return response
 
 @app.route("/api/stored", methods=["POST"])
 def create_stored():

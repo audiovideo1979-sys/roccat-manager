@@ -26,7 +26,10 @@ README). Replaced by zero-setup sync, see `SYNC_SETUP.md`:
   (`state:` line, sha1 of stored.json + slots without active_slot) instead of relying on mtimes; a page
   that loaded the examples (`/api/stored` `source`) is refused (409, `before_request`) once saved profiles
   exist, so a late Drive delivery can't be overwritten by example data with the same ids; the
-  examples-based and unreadable states have their own amber lines. Not fixed (judged unreachable here):
+  examples-based and unreadable states have their own amber lines. Fourth review: `profiles_source()` is
+  none/examples/saved and any mismatch with the page's header is refused; the page follows its own first
+  save through the response header; after a refusal the page blocks all writes until it reloads (a queued
+  autosave used to slip through); re-copy only over a `from_defaults` shared file. Not fixed (judged unreachable here):
   a Work boot whose very first run falls back to %APPDATA% and edits the examples there would bring them
   in as a real set (`not-merged` on Personal, nothing lost).
 - Sidebar line + `GET /api/data-location`. `build.bat` copies the exe into `ROCCAT_Manager_Full`.

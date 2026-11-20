@@ -191,6 +191,40 @@ def test_profiles_displaced_by_an_examples_copy_are_brought_back(server, tmp_pat
     assert names_in(shared) == ['Gaming'] and names_in(shared / 'replaced-T') == ['WWM']
 
 
+def test_no_second_copy_while_drive_has_not_shown_the_shared_file_yet(server, tmp_path, seed):
+    # fourth review: after this PC's set was brought over, the shared stored.json is briefly not there
+    # (Drive still catching up): copying the old local set in again would fork the profiles
+    local, shared = tmp_path / 'appdata' / 'profiles', tmp_path / 'drive' / 'profiles'
+    write_profiles(local, ['Old'])
+    assert server.migrate_local_profiles(shared, local, seed) == 'copied'
+    (shared / 'stored.json').unlink()
+    assert server.migrate_local_profiles(shared, local, seed) is None
+    assert not (shared / 'stored.json').exists()
+
+
+def test_a_note_without_a_fingerprint_gets_one(server, tmp_path, seed):
+    local, shared = tmp_path / 'appdata' / 'profiles', tmp_path / 'drive' / 'profiles'
+    write_profiles(local, ['Gaming', 'Work'])
+    assert server.migrate_local_profiles(shared, local, seed) == 'copied'
+    (local / server.MOVED_NOTE).write_text('moved\n')         # as written before the fingerprint existed
+    assert server.migrate_local_profiles(shared, local, seed) is None
+    assert 'state: ' in (local / server.MOVED_NOTE).read_text()
+    slots = json.loads((local / 'slots.json').read_text())
+    slots['boot1'][2] = 'Work'
+    (local / 'slots.json').write_text(json.dumps(slots))
+    assert server.migrate_local_profiles(shared, local, seed) == 'not-merged'
+
+
+def test_a_note_in_another_text_encoding_does_not_stop_the_app(server, tmp_path, seed):
+    local, shared = tmp_path / 'appdata' / 'profiles', tmp_path / 'drive' / 'profiles'
+    write_profiles(local, ['Gaming'])
+    point_at(server, shared, 'shared', seed)
+    assert server.prepare_profiles(local_profiles=local) == 'copied'
+    state = server._note_state(local / server.MOVED_NOTE)
+    (local / server.MOVED_NOTE).write_bytes(('C:\\Users\\Jos\xe9\\My Drive\n\nstate: %s\n' % state).encode('cp1252'))
+    assert server.prepare_profiles(local_profiles=local) is None
+
+
 def test_a_page_still_on_the_examples_cannot_overwrite_profiles_that_arrived(server, tmp_path, seed):
     # third review: the app opened before Google Drive delivered this side's profiles (the page shows the
     # examples, which share ids with the real set); Drive delivers; the next edit must not overwrite them
@@ -198,7 +232,7 @@ def test_a_page_still_on_the_examples_cannot_overwrite_profiles_that_arrived(ser
     point_at(server, shared, 'shared', seed)
     client = server.app.test_client()
     page = client.get('/api/stored').get_json()
-    assert page['source'] == 'examples'
+    assert page['source'] == 'none'                             # the bundled examples, nothing saved yet
     write_profiles(shared, ['Main Test'])                       # Google Drive delivers the real set
     stale = {'X-Profiles-Source': page['source']}
     r = client.put('/api/stored/Main Test', json={'name': 'Main Test', 'dpi': 800}, headers=stale)
@@ -217,10 +251,27 @@ def test_the_examples_page_can_save_while_nothing_arrived(server, tmp_path, seed
     shared = tmp_path / 'drive' / 'profiles'
     point_at(server, shared, 'shared', seed)
     client = server.app.test_client()
-    hdr = {'X-Profiles-Source': client.get('/api/stored').get_json()['source']}
-    assert client.delete('/api/stored/WWM', headers=hdr).status_code == 200
-    assert client.delete('/api/stored/Grounded', headers=hdr).status_code == 200, "its own save keeps it 'examples'"
-    assert names_in(shared) == ['Main Test']
+    source = client.get('/api/stored').get_json()['source']
+    for pid in ('WWM', 'Grounded'):
+        r = client.delete('/api/stored/' + pid, headers={'X-Profiles-Source': source})
+        assert r.status_code == 200
+        source = r.headers['X-Profiles-Source']                 # the page follows its own first save
+    assert source == 'examples' and names_in(shared) == ['Main Test']
+
+
+def test_an_examples_set_arriving_from_the_other_side_is_not_overwritten_either(server, tmp_path, seed):
+    # fourth review: the other side saved a set started from the examples; this page still shows the bundle
+    shared = tmp_path / 'drive' / 'profiles'
+    point_at(server, shared, 'shared', seed)
+    client = server.app.test_client()
+    source = client.get('/api/stored').get_json()['source']
+    shared.mkdir(parents=True)
+    (shared / 'stored.json').write_text(json.dumps({'profiles': [{'id': 'Main Test', 'name': 'Main Test',
+                                                                   'color': '#00ff00'}], server.FROM_DEFAULTS: True}))
+    r = client.put('/api/stored/Main Test', json={'name': 'Main Test', 'color': '#7F77DD'},
+                   headers={'X-Profiles-Source': source})
+    assert r.status_code == 409
+    assert json.loads((shared / 'stored.json').read_text())['profiles'][0]['color'] == '#00ff00'
 
 
 def test_an_unreadable_shared_file_is_reported(server, tmp_path, seed):
@@ -385,7 +436,7 @@ def test_data_location_endpoint(server, tmp_path):
     r = server.app.test_client().get('/api/data-location').get_json()
     assert r['success'] and r['path'] == str(tmp_path / 'p') and r['how'] == 'shared' and r['shared'] is True
     assert r['migration'] == 'not-merged' and r['local_path'].endswith('profiles')
-    assert r['source'] == 'examples' and r['readable'] is True
+    assert r['source'] == 'none' and r['readable'] is True
     assert r['has_profiles'] is False
     write_profiles(tmp_path / 'p', ['Gaming'])
     assert server.app.test_client().get('/api/data-location').get_json()['has_profiles'] is True

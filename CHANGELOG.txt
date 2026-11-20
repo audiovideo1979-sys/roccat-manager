@@ -43,13 +43,23 @@ ROCCAT Manager Full — Changelog
     page on "Loading..." -> loadAll always runs loadDataLocation, "readable" + amber line; an
     examples-based shared set shows amber, not green; SYNC_SETUP: green = using Drive (can't
     know it is synced), exact update commands.
+  - Fourth review (the third round's new code; reviewer + skeptic; 5 of 6 confirmed) fixed:
+    after a refused write the page re-read the list, marked itself up to date and let a queued
+    autosave write example data over the real profile (medium) -> once a write is refused the
+    page refuses every later one itself until it reloads, and keeps the warning on screen;
+    a page on the bundled examples could overwrite an examples-based set arriving from the
+    other boot -> three states (none/examples/saved), any mismatch is refused, the page follows
+    its own first save via the X-Profiles-Source response header; the re-copy also fired when
+    Drive simply hadn't shown the shared stored.json yet -> only over a from_defaults set; a
+    note in another text encoding stopped the exe from starting -> UTF-8 with errors=replace,
+    startup catches ValueError too. Checked in Chromium (Playwright) against the real server.
   - Fixed (from @6): deleting a profile after any push/switch crashed (TypeError) because
     slots.json also holds "active_slot"; the profile was removed but its slots not cleared.
   - build.bat debug no longer copies the console build over the shared exe.
   - GET /api/data-location + sidebar line: "shared through Google Drive" or "this PC only".
   - build.bat copies dist\ROCCAT Manager.exe into Drive ...\ROCCAT_Manager_Full (no labels/goto:
     the repo stores .bat with LF endings).
-  - SYNC_SETUP.md rewritten (no setx). Tests: 133 pass (tests/test_data_location.py).
+  - SYNC_SETUP.md rewritten (no setx). Tests: 137 pass (tests/test_data_location.py).
 
 @6 — 2026-09-19 (stuck-modifier fix, busy lock, active-profile memory)
   - Stuck keyboard modifier fix: a mouse button bound to Ctrl/Alt/Shift/Win could leave
