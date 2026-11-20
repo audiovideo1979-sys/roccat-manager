@@ -708,7 +708,9 @@ def data_location():
                     "shared": DATA_HOW in ("shared", "env"), "migration": MIGRATION,
                     "has_profiles": STORED_FILE.exists(), "source": profiles_source(),
                     "readable": not STORED_FILE.exists() or _read_json_file(STORED_FILE) is not None,
-                    "local_path": str(_local_data_dir() / "profiles")})
+                    "local_path": str(_local_data_dir() / "profiles"),
+                    # this PC has used the shared folder before (so "not found" now is worth a warning)
+                    "was_shared": (_local_data_dir() / "profiles" / MOVED_NOTE).exists()})
 
 
 @app.route("/api/release-modifiers", methods=["POST"])

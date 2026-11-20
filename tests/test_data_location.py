@@ -440,3 +440,15 @@ def test_data_location_endpoint(server, tmp_path):
     assert r['has_profiles'] is False
     write_profiles(tmp_path / 'p', ['Gaming'])
     assert server.app.test_client().get('/api/data-location').get_json()['has_profiles'] is True
+
+
+def test_a_pc_that_never_shared_just_says_saved_on_this_pc(server, tmp_path, monkeypatch):
+    # a friend's PC (no Google Drive folder) is not warned about Drive; a PC that used to share is
+    monkeypatch.setenv('APPDATA', str(tmp_path / 'appdata'))
+    server.DATA_HOW, server.PROFILES_DIR = 'local', tmp_path / 'appdata' / 'ROCCAT Manager' / 'profiles'
+    server.STORED_FILE = server.PROFILES_DIR / 'stored.json'
+    client = server.app.test_client()
+    assert client.get('/api/data-location').get_json()['was_shared'] is False
+    server.PROFILES_DIR.mkdir(parents=True)
+    (server.PROFILES_DIR / server.MOVED_NOTE).write_text('state: x\n')
+    assert client.get('/api/data-location').get_json()['was_shared'] is True

@@ -38,11 +38,19 @@ The old `ROCCAT_MANAGER_DATA` variable still works and still wins if it is set.
 
 ---
 
-## Personal boot — once (this is where the app is built)
+## Getting the program into Drive (either boot)
+
+The quickest way: download **ROCCAT.Manager.exe** from
+[the latest release](https://github.com/audiovideo1979-sys/roccat-manager/releases/latest) (GitHub builds it)
+and save it into `ROCCAT_Manager_Full` as **`ROCCAT Manager.exe`**. No Python needed. Or build it yourself
+on the Personal boot, as in step 2 below.
+
+## Personal boot — once
 
 1. Make sure **Google Drive for desktop** is running and File Explorer shows
    `My Drive\Claude Folder\Projects\Personal\ROCCAT_Manager_Full`.
-2. Get the latest code and build it (Command Prompt):
+2. If `ROCCAT Manager.exe` isn't in that folder yet (see above), get the latest code and build it
+   (Command Prompt):
    ```
    cd /d "%USERPROFILE%\Downloads"
    git clone --branch claude/roccat-swarm-integration-e5coz3 --depth 1 https://github.com/audiovideo1979-sys/EOS-consumables-builder roccat-src

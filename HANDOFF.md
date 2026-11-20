@@ -1,5 +1,14 @@
 # ROCCAT Manager — Handoff
 
+## Public release (2026-11-20)
+
+The owner wants to share the app with a friend. Public home: `audiovideo1979-sys/roccat-manager` (main),
+kept identical to this `roccat-manager/` folder (changes are made here and ported with
+`git format-patch --relative=roccat-manager`). Releases: push a `v*` tag there and
+`.github/workflows/release.yml` builds the exe on GitHub's Windows runner and attaches it. The CI build is
+not the owner's local build (different Python patch level / package versions); confirm a release on the
+mouse before telling people it works. A PC without the Drive folder is a normal single-PC install.
+
 ## Both boots, one profile set (2026-11-20, cloud session, not yet run on the PC)
 
 The `setx ROCCAT_MANAGER_DATA` plan from 2026-09-22 was never carried out (both Drive folders held only a

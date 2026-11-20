@@ -978,9 +978,12 @@ async function loadDataLocation() {
     } else if (data.shared) {
       el.textContent = 'Profiles: shared through Google Drive';
       el.style.color = 'var(--green-txt)';
-    } else if (data.how === 'local') {
+    } else if (data.how === 'local' && data.was_shared) {
+      // this PC normally shares its profiles through Google Drive, but the folder isn't there right now
       el.textContent = 'Profiles: this PC only (Google Drive folder not found - start Google Drive, then reopen)';
       el.style.color = 'var(--amber-txt)';
+    } else if (data.how === 'local') {
+      el.textContent = 'Profiles: saved on this PC';   // the normal single-PC setup
     } else {
       el.textContent = 'Profiles: ' + data.path;
     }

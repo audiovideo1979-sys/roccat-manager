@@ -1,6 +1,19 @@
 ROCCAT Manager Full — Changelog
 ================================
 
+@8 — 2026-11-20 (public download for other people)
+  - Public home: github.com/audiovideo1979-sys/roccat-manager (main). README.md written for
+    someone who just wants the program: download, SmartScreen, what you need, how to use it.
+  - .github/workflows/release.yml: on a v* tag (or by hand with a version) GitHub builds the
+    exe on windows-latest (Python 3.12, same deps as build.bat), runs the tests and the
+    drivefolders.py ctypes check on real Windows, and attaches the exe to a release
+    (GitHub names the asset ROCCAT.Manager.exe). In this repo's subtree the workflow is inert
+    (GitHub only reads .github at a repo root); it runs in the standalone repo.
+  - Sidebar on a PC that never shared through Google Drive (a single-PC user) now says
+    "Profiles: saved on this PC" (grey) instead of an amber "Google Drive folder not found";
+    the warning stays on a PC that used the shared folder before (/api/data-location
+    "was_shared"). Tests: 138 pass.
+
 @7 — 2026-11-20 (both boots share the app and profiles through Google Drive, no setup)
   - drivefolders.py: finds the Google Drive "Personal" projects folder on any drive letter
     (GetLogicalDrives + GetDriveTypeW; fixed/network/RAM only, G: first) or under the user

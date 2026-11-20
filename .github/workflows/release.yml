@@ -1,0 +1,68 @@
+# Builds ROCCAT Manager.exe on Windows and publishes it as a GitHub release.
+#   Push a tag like v1.0.1           -> tests, build, release "v1.0.1" with the .exe attached
+#   Run it by hand (Actions tab)     -> tests + build; give a version to also publish a release
+name: Build Windows app
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release to publish, e.g. v1.0.1 (leave empty to only build)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Install dependencies (same list as build.bat)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flask frida hidapi pywebview pythonnet pyinstaller pytest
+
+      - name: Run the tests (no mouse needed)
+        run: python -m pytest -q tests
+
+      - name: Check the Google Drive folder finder on real Windows
+        run: python -c "import sys; sys.path.insert(0, 'ROCCAT_Manager'); import drivefolders; print('drive roots:', drivefolders.drive_roots()); print('ROCCAT_Manager_Full:', drivefolders.find('ROCCAT_Manager_Full'))"
+
+      - name: Build the .exe
+        run: python -m PyInstaller --noconfirm --clean roccat_manager.spec
+
+      - name: Check the .exe
+        shell: pwsh
+        run: |
+          $exe = Get-Item "dist/ROCCAT Manager.exe"
+          "{0} - {1:N1} MB" -f $exe.Name, ($exe.Length / 1MB)
+          if ($exe.Length -lt 10MB) { throw "The .exe is suspiciously small" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ROCCAT-Manager-exe
+          path: dist/ROCCAT Manager.exe
+
+      - name: Publish the release
+        if: github.ref_type == 'tag' || inputs.version != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_FROM_PUSH: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          TAG_FROM_INPUT: ${{ inputs.version }}
+        run: |
+          $tag = if ($env:TAG_FROM_PUSH) { $env:TAG_FROM_PUSH } else { $env:TAG_FROM_INPUT }
+          $notes = "Windows app for the ROCCAT Kone XP Air. Download ROCCAT.Manager.exe below and double-click it (no installer). " +
+                   "If Windows says 'Windows protected your PC', click More info, then Run anyway. " +
+                   "How to use it: https://github.com/${{ github.repository }}#readme"
+          gh release create $tag "dist/ROCCAT Manager.exe" --target "${{ github.sha }}" --title "ROCCAT Manager $tag" --notes $notes
