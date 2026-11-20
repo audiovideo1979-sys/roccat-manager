@@ -3,7 +3,7 @@
 ## On session start
 1. Read `HANDOFF.md` (state, open questions, the protocol reference).
 2. `CHANGELOG.txt` has the latest @N — continue from there.
-3. Run `python -m pytest -q tests` — 114 tests, no hardware needed. Keep it green.
+3. Run `python -m pytest -q tests` — 128 tests, no hardware needed. Keep it green.
 
 ## What it is
 Web UI (Flask, port 5555) that manages the five onboard profiles of a ROCCAT Kone XP Air (DPI, button
@@ -50,7 +50,7 @@ its USB receiver (VID 0x10F5, receiver PID 0x5017).
 | POST | `/api/import-dat` (file or `{source:'onboard'}`) | stored profiles from Swarm exports |
 | GET | `/api/export/{id}`, `/api/export-all/{boot}` | legacy .dat export (zero checksums) |
 | GET | `/api/actions` | names the encoder supports |
-| GET | `/api/data-location` | profiles folder in use, `how` = env/shared/local/dev, `migrated` |
+| GET | `/api/data-location` | profiles folder in use: `path`, `how` (env/shared/local/dev), `shared`, `has_profiles`, `migration` (copied/not-merged/copy-failed/null), `local_path` |
 
 ## Rules
 - Every packet or block change gets a test that pins it to a capture (`tests/test_sequences.py`,

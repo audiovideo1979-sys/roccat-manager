@@ -18,6 +18,11 @@ shows which folder it is using:
 - **"Profiles: shared through Google Drive"** (green) — synced, all good.
 - **"Profiles: this PC only (...)"** (amber) — Google Drive wasn't running or the folder wasn't found.
   Start Google Drive, then reopen the app. Hover the line to see the exact folder.
+- **"...no profiles saved there yet - showing the built-in examples"** (amber) — the Drive folder is there
+  but empty on this boot, usually because Drive hasn't finished syncing from the other boot. Don't push to
+  the mouse yet: wait for Drive, then reopen.
+- **"...this PC's own profiles are different and were not merged"** (amber) — see below.
+- **"...couldn't copy this PC's profiles into Google Drive"** (amber) — close and reopen to try again.
 
 The old `ROCCAT_MANAGER_DATA` variable still works and still wins if it is set.
 
@@ -62,12 +67,17 @@ always on the disk even before Drive has finished starting.
 - Copying profiles in (step 3 above) happens once per boot, and only when that boot has profiles of its
   own (not just the shipped defaults) and the shared folder has none yet. Whatever was in the shared folder
   is first copied to a `replaced-<date>` folder. Real shared profiles are never overwritten.
-- A boot that only ever had the defaults never writes them into Drive, so it doesn't matter which boot
-  runs first, and switching profiles on the Work boot first doesn't block anything.
+- It doesn't matter which boot runs first. A boot that only has the built-in example profiles never
+  writes them into Drive, and if you change those examples on the Work boot before the Personal boot's
+  first run, they are marked as "started from the examples": the Personal boot's own profiles still come
+  in and replace them (the Work boot's version is kept in `replaced-<date>`).
 - If both boots already had their own, different profiles, the ones in Drive win and the sidebar turns
-  amber: "This PC's own older profiles were not merged". Hover it to see both folders. Nothing is deleted;
-  copy what you want across by hand, or rename that PC-only folder to make the message go away.
+  amber: "This PC's own profiles are different and were not merged". Hover it to see both folders.
+  Nothing is deleted; copy what you want across by hand, or rename that PC-only folder to clear it.
 - After the copy, the PC-only folder gets a note, `MOVED TO GOOGLE DRIVE.txt`, so it isn't copied twice.
+  If profiles in that folder change later (an old copy of the app still pinned to the taskbar, or a session
+  while Google Drive was off), the same amber line appears rather than those edits quietly going missing.
+  Unpin any old copy of the app.
 
 ## Updating the app later
 - On the Personal boot: `git pull`, then `build.bat`. It replaces the .exe in Drive (close the app first,

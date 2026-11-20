@@ -19,13 +19,26 @@ ROCCAT Manager Full — Changelog
     could lose the personal side's profiles if the work side ran first: its old %APPDATA%
     defaults counted as real, and a profile switch (active_slot write) deleted the marker.
     Replaced by the content check above; both scenarios are tests now.
+  - Second review (3 lenses + a skeptic per lens; 5 of 10 findings confirmed) fixed:
+    a Work-boot edit of the built-in examples before the Personal boot's first run shut its
+    real profiles out -> a shared stored.json first saved from the defaults carries
+    "from_defaults" and doesn't count as real; green "shared" while Drive hadn't synced yet
+    (defaults shown, Push all would write them to the mouse) -> has_profiles + amber line, and
+    the active-slot write no longer starts a profiles folder in Drive; a failed copy is
+    reported ("copy-failed") instead of swallowed; local edits after the move (old exe, Drive
+    off) are reported; slot assignments count as real data, the active slot doesn't; a test
+    that scanned the PC's real G: drive is isolated; CLAUDE.md API row corrected.
+  - Found while checking those: with from_defaults, a later session with Drive off (local
+    fallback) could have copied its edits over a shared set built from the examples. Every boot
+    now leaves the note on its first connection even with nothing to bring, so later local
+    changes are only ever reported ("not-merged"), never copied.
   - Fixed (from @6): deleting a profile after any push/switch crashed (TypeError) because
     slots.json also holds "active_slot"; the profile was removed but its slots not cleared.
   - build.bat debug no longer copies the console build over the shared exe.
   - GET /api/data-location + sidebar line: "shared through Google Drive" or "this PC only".
   - build.bat copies dist\ROCCAT Manager.exe into Drive ...\ROCCAT_Manager_Full (no labels/goto:
     the repo stores .bat with LF endings).
-  - SYNC_SETUP.md rewritten (no setx). Tests: 123 pass (tests/test_data_location.py).
+  - SYNC_SETUP.md rewritten (no setx). Tests: 128 pass (tests/test_data_location.py).
 
 @6 — 2026-09-19 (stuck-modifier fix, busy lock, active-profile memory)
   - Stuck keyboard modifier fix: a mouse button bound to Ctrl/Alt/Shift/Win could leave

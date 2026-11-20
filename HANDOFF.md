@@ -16,7 +16,13 @@ README). Replaced by zero-setup sync, see `SYNC_SETUP.md`:
   A shared folder is never seeded (`_profile_file` reads the bundle's defaults until the first save), so
   a defaults-only side can't block or overwrite the other. The first version used a `.seeded-defaults`
   marker; the pre-ship review broke it two ways (work side's old local defaults; active_slot write cleared
-  the marker) — both are tests now.
+  the marker) — both are tests now. Second review: a shared stored.json first saved from the defaults is
+  tagged `from_defaults` (doesn't count as real, so a Work-boot tweak can't shut out the Personal set);
+  `/api/data-location` `has_profiles` drives an amber "no profiles there yet" line; active-slot writes are
+  skipped until the shared folder has profiles; `copy-failed` is reported; local edits newer than the
+  note → `not-merged`. Each fix has a test that fails without it (mutation-checked). Every boot leaves
+  the note on its first shared-mode start even with nothing to bring, so a later Drive-off session's
+  local edits can't be copied over a `from_defaults` shared set.
 - Sidebar line + `GET /api/data-location`. `build.bat` copies the exe into `ROCCAT_Manager_Full`.
 - Next on the PC: Personal boot builds + runs from Drive (profiles migrate), Work boot runs the same exe.
   **Untested on hardware:** a boot without Swarm II opens the receiver through the bundled hidapi

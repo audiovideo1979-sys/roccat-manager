@@ -36,6 +36,7 @@ def _bundle_base():
 # Drive for desktop uses on that side (drivefolders.py).
 SHARED_DATA_NAME = "ROCCAT Manager Data"
 MOVED_NOTE = "MOVED TO GOOGLE DRIVE.txt"   # left in this PC's own profiles folder once they were copied over
+FROM_DEFAULTS = "from_defaults"            # in a shared stored.json first saved from the built-in defaults
 
 
 def _local_data_dir():
@@ -97,22 +98,45 @@ def _read_json_file(path):
         return None
 
 
+def _without_active_slot(slots):
+    return {k: v for k, v in slots.items() if k != "active_slot"} if isinstance(slots, dict) else slots
+
+
 def has_real_profiles(folder, seed_dir):
-    """True when folder/stored.json exists and is not just the shipped defaults. Every build seeds the same
-    file (unchanged since March 2026), so equal-to-the-seed means it was never edited. An unreadable file
-    counts as real: it is the user's, never something to replace."""
+    """True when the folder holds the user's own profiles: stored.json exists and it, or the slot assignments,
+    differ from the shipped defaults (unchanged since March 2026, so equal means never edited; the remembered
+    active slot doesn't count). A shared stored.json first saved from the built-in defaults, on a side that
+    had no profiles of its own, is marked from_defaults and doesn't count either: it must not shut out the
+    other side's real set. An unreadable stored.json counts as real: it is the user's, never disposable."""
     f = folder / "stored.json"
     if not f.is_file():
         return False
     data = _read_json_file(f)
-    return data is None or data != _read_json_file(seed_dir / "stored.json")
+    if data is None:
+        return True
+    if isinstance(data, dict) and data.get(FROM_DEFAULTS):
+        return False
+    if data != _read_json_file(seed_dir / "stored.json"):
+        return True
+    slots = _read_json_file(folder / "slots.json")
+    seed_slots = _read_json_file(seed_dir / "slots.json")
+    return slots is not None and _without_active_slot(slots) != _without_active_slot(seed_slots)
+
+
+def _newer(a, b):
+    """a was modified after b (2 s slack for coarse file times)."""
+    try:
+        return a.stat().st_mtime > b.stat().st_mtime + 2
+    except OSError:
+        return False
 
 
 def _write_moved_note(local_profiles, shared_profiles):
     try:
+        local_profiles.mkdir(parents=True, exist_ok=True)
         (local_profiles / MOVED_NOTE).write_text(
-            "ROCCAT Manager now keeps profiles in the Google Drive folder\n  %s\nso both boots share them. "
-            "The files here are an old copy, kept as a backup.\n" % shared_profiles)
+            "ROCCAT Manager keeps profiles in the Google Drive folder\n  %s\nso both boots share them. "
+            "Anything in this folder is this PC's own old copy, kept as a backup.\n" % shared_profiles)
     except OSError:
         pass
 
@@ -122,16 +146,28 @@ def migrate_local_profiles(shared_profiles, local_profiles, seed_dir, stamp=None
     "copied"      this PC's profiles were copied in (they stay here too, as a backup);
     "not-merged"  the shared folder already has other real profiles, which win; this PC's are left alone;
     None          nothing to do (no profiles of its own here, only the defaults, or already brought over).
-    Only real profiles count on either side, so the defaults on a side that never edited anything can't
-    block or overwrite the other side's. Anything already in the shared folder is backed up first."""
-    if not has_real_profiles(local_profiles, seed_dir) or (local_profiles / MOVED_NOTE).exists():
-        return None
+    Only real profiles count on either side (see has_real_profiles), so a side that only ever had the
+    defaults can't block or overwrite the other side's. Anything in the shared folder is backed up first.
+    The note left here marks this PC as connected (even when there was nothing to bring), so this happens
+    once: profiles changed here after that (an old copy of the app, or a session while Google Drive was
+    off) are reported, never copied over the shared ones."""
     if _same_folder(shared_profiles, local_profiles):
         return None
-    if _read_json_file(local_profiles / "stored.json") is None:
+    local_stored = local_profiles / "stored.json"
+    note = local_profiles / MOVED_NOTE
+    if not has_real_profiles(local_profiles, seed_dir):
+        if not note.exists():
+            _write_moved_note(local_profiles, shared_profiles)
+        return None
+    if note.exists():
+        if not _newer(local_stored, note):
+            return None                # connected before, not changed here since
+        same = _read_json_file(shared_profiles / "stored.json") == _read_json_file(local_stored)
+        return None if same else "not-merged"
+    if _read_json_file(local_stored) is None:
         return "not-merged"            # damaged: don't spread it to the other side; the user is told instead
     if has_real_profiles(shared_profiles, seed_dir):
-        if _read_json_file(shared_profiles / "stored.json") == _read_json_file(local_profiles / "stored.json"):
+        if _read_json_file(shared_profiles / "stored.json") == _read_json_file(local_stored):
             _write_moved_note(local_profiles, shared_profiles)    # already the same profiles (copied by hand)
             return None
         return "not-merged"
@@ -192,7 +228,7 @@ def prepare_profiles(local_profiles=None):
         try:
             return migrate_local_profiles(PROFILES_DIR, local_profiles, SEED_DIR)
         except OSError:
-            return None
+            return "copy-failed"       # shown in the sidebar; the next launch tries again
     seed_profiles()
     return None
 
@@ -234,7 +270,13 @@ def load_stored():
     return data.get("profiles", [])
 
 def save_stored(profiles):
-    save_json(STORED_FILE, {"profiles": profiles})
+    data = {"profiles": profiles}
+    if DATA_HOW in ("shared", "env") and (not STORED_FILE.exists()
+                                          or (_read_json_file(STORED_FILE) or {}).get(FROM_DEFAULTS)):
+        # this side started from the built-in defaults (it had no profiles of its own): say so, so the other
+        # side's real profiles still come in on its first run (has_real_profiles)
+        data[FROM_DEFAULTS] = True
+    save_json(STORED_FILE, data)
 
 def load_slots():
     data = load_json(_profile_file(SLOTS_FILE))
@@ -257,6 +299,8 @@ def save_active_slot(slot):
     """Remember the active onboard slot so the next launch can show what the mouse is on."""
     if not (isinstance(slot, int) and 0 <= slot <= 4):
         return
+    if DATA_HOW in ("shared", "env") and not STORED_FILE.exists():
+        return      # shared folder with no profiles yet: don't start one (it would race the other side's in Drive)
     data = load_slots()
     data["active_slot"] = slot
     save_slots(data)
@@ -586,6 +630,7 @@ def data_location():
     """Where profiles are saved, so each side can show it is using the shared Google Drive folder."""
     return jsonify({"success": True, "path": str(PROFILES_DIR), "how": DATA_HOW,
                     "shared": DATA_HOW in ("shared", "env"), "migration": MIGRATION,
+                    "has_profiles": STORED_FILE.exists(),
                     "local_path": str(_local_data_dir() / "profiles")})
 
 

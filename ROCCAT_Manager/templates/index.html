@@ -922,11 +922,20 @@ async function loadDataLocation() {
     const data = await (await fetch('/api/data-location')).json();
     if (!data.success) throw new Error('no data location');
     el.title = data.path;
-    if (data.shared && data.migration === 'not-merged') {
-      // the shared folder already had the other side's profiles; this PC's own older ones were left alone
-      el.textContent = "Profiles: shared through Google Drive. This PC's own older profiles were not merged (hover to see where they are)";
+    const both = 'Shared (in use): ' + data.path + '\nThis PC only: ' + data.local_path;
+    if (data.shared && data.migration === 'copy-failed') {
+      el.textContent = "Profiles: couldn't copy this PC's profiles into Google Drive (they are still on this PC). Close and reopen the app to try again.";
       el.style.color = 'var(--amber-txt)';
-      el.title = 'Shared (in use): ' + data.path + '\nThis PC only (not merged): ' + data.local_path;
+      el.title = both;
+    } else if (data.shared && data.migration === 'not-merged') {
+      // the shared folder already had other real profiles, which win; this PC's own were left alone
+      el.textContent = "Profiles: shared through Google Drive. This PC's own profiles are different and were not merged (hover to see where they are)";
+      el.style.color = 'var(--amber-txt)';
+      el.title = both;
+    } else if (data.shared && !data.has_profiles) {
+      // nothing saved in the shared folder yet: the built-in example profiles are showing
+      el.textContent = 'Profiles: Google Drive folder found, but no profiles saved there yet - showing the built-in examples. If your other PC has profiles, let Google Drive finish syncing, then reopen.';
+      el.style.color = 'var(--amber-txt)';
     } else if (data.shared) {
       el.textContent = 'Profiles: shared through Google Drive';
       el.style.color = 'var(--green-txt)';

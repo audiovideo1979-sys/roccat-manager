@@ -78,6 +78,7 @@ def test_exe_in_drive_finds_its_sibling_data_folder(server, tmp_path):
 def test_drivefolders_finds_my_drive_under_home(drivefolders, tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('USERPROFILE', str(tmp_path))
+    monkeypatch.setattr(drivefolders, 'drive_roots', lambda: [])   # on the PC, don't find the real G:
     assert drivefolders.find('ROCCAT_Manager_Full') is None
     app = tmp_path / 'My Drive' / 'Claude Folder' / 'Projects' / 'Personal' / 'ROCCAT_Manager_Full'
     app.mkdir(parents=True)
@@ -116,6 +117,7 @@ def test_a_pc_with_only_the_defaults_brings_nothing(server, tmp_path, seed):
     copy_of(local, seed)
     assert server.migrate_local_profiles(shared, local, seed) is None
     assert not shared.exists()
+    assert (local / server.MOVED_NOTE).exists(), "this PC is marked as connected"
 
 
 def test_a_profile_switch_on_the_other_side_first_does_not_block_the_copy(server, tmp_path, seed):
@@ -126,12 +128,54 @@ def test_a_profile_switch_on_the_other_side_first_does_not_block_the_copy(server
     server.STORED_FILE, server.SLOTS_FILE = shared / 'stored.json', shared / 'slots.json'
     assert [p['name'] for p in server.load_stored()] == ['Main Test', 'Grounded', 'WWM']   # read from the bundle
     server.save_active_slot(2)
-    assert (shared / 'slots.json').exists() and not (shared / 'stored.json').exists()
+    assert not shared.exists(), "no profiles folder is started in Drive just for the active slot"
     local = tmp_path / 'appdata' / 'profiles'
     write_profiles(local, ['Gaming'])
     assert server.migrate_local_profiles(shared, local, seed, stamp='T') == 'copied'
     assert names_in(shared) == ['Gaming']
-    assert json.loads((shared / 'replaced-T' / 'slots.json').read_text())['active_slot'] == 2
+
+
+def test_an_edit_of_the_defaults_on_the_other_side_first_does_not_shut_out_real_profiles(server, tmp_path, seed):
+    # second review: the work side deletes one built-in example before the personal side's first run
+    shared = tmp_path / 'drive' / 'profiles'
+    point_at(server, shared, 'shared', seed)
+    server.save_stored(server.load_stored()[1:])
+    server.save_stored(server.load_stored())                    # the mark survives later saves
+    assert json.loads((shared / 'stored.json').read_text())[server.FROM_DEFAULTS] is True
+    local = tmp_path / 'appdata' / 'profiles'
+    write_profiles(local, ['Gaming'])
+    assert server.migrate_local_profiles(shared, local, seed, stamp='T') == 'copied'
+    assert names_in(shared) == ['Gaming']
+    assert names_in(shared / 'replaced-T') == ['Grounded', 'WWM'], "the other side's edit is kept"
+    server.save_stored(server.load_stored())                    # real profiles are never marked
+    assert server.FROM_DEFAULTS not in json.loads((shared / 'stored.json').read_text())
+
+
+def test_slot_assignments_count_as_this_pcs_own(server, tmp_path, seed):
+    shared = tmp_path / 'drive' / 'profiles'
+    for name, active, reorder, expected in (('a', 3, False, None), ('b', 3, True, 'copied')):
+        local = tmp_path / name / 'profiles'
+        copy_of(local, seed)
+        slots = json.loads((local / 'slots.json').read_text())
+        slots['active_slot'] = active                     # a remembered active slot is not an edit
+        if reorder:
+            slots['boot1'] = list(reversed(slots['boot1']))
+        (local / 'slots.json').write_text(json.dumps(slots))
+        assert server.migrate_local_profiles(shared, local, seed) == expected, name
+
+
+def test_a_session_while_drive_was_off_never_replaces_the_shared_profiles(server, tmp_path, seed):
+    # both boots built their set from the examples (marked from_defaults); later one boot runs with Google
+    # Drive off, falls back to this PC's folder, and something is edited there
+    shared, local = tmp_path / 'drive' / 'profiles', tmp_path / 'appdata' / 'profiles'
+    point_at(server, shared, 'shared', seed)
+    assert server.prepare_profiles(local_profiles=local) is None      # connected: nothing of its own to bring
+    server.save_stored(server.load_stored() + [{'id': 'months', 'name': 'Months of work'}])
+    write_profiles(local, ['Edited while Drive was off'])
+    note_time = (local / server.MOVED_NOTE).stat().st_mtime
+    os.utime(local / 'stored.json', (note_time + 60, note_time + 60))
+    assert server.prepare_profiles(local_profiles=local) == 'not-merged'
+    assert 'Months of work' in [p['name'] for p in server.load_stored()]
 
 
 def test_defaults_already_in_the_shared_folder_are_replaced_and_kept(server, tmp_path, seed):
@@ -168,6 +212,18 @@ def test_profiles_are_brought_over_only_once(server, tmp_path, seed):
     write_profiles(shared, ['Gaming', 'Added on the work side'])
     assert server.migrate_local_profiles(shared, local, seed) is None
     assert names_in(shared) == ['Gaming', 'Added on the work side']
+
+
+def test_edits_on_this_pc_after_the_move_are_reported(server, tmp_path, seed):
+    # e.g. the old exe still pinned to the taskbar, or a session while Google Drive was off
+    local, shared = tmp_path / 'appdata' / 'profiles', tmp_path / 'drive' / 'profiles'
+    write_profiles(local, ['Gaming'])
+    assert server.migrate_local_profiles(shared, local, seed) == 'copied'
+    write_profiles(local, ['Gaming', 'Made in the old app'])
+    note_time = (local / server.MOVED_NOTE).stat().st_mtime
+    os.utime(local / 'stored.json', (note_time + 60, note_time + 60))
+    assert server.migrate_local_profiles(shared, local, seed) == 'not-merged'
+    assert names_in(shared) == ['Gaming']
 
 
 def test_shared_settings_stay_when_this_pc_has_none(server, tmp_path, seed):
@@ -227,6 +283,19 @@ def test_startup_never_writes_the_defaults_into_the_shared_folder(server, tmp_pa
     assert names_in(prof) == ['Main Test']
 
 
+def test_a_failed_copy_is_reported(server, tmp_path, seed, monkeypatch):
+    prof, local = tmp_path / 'drive' / 'profiles', tmp_path / 'appdata' / 'profiles'
+    write_profiles(local, ['Gaming'])
+    point_at(server, prof, 'shared', seed)
+
+    def full_disk(a, b):
+        raise OSError(28, 'No space left on device')
+    monkeypatch.setattr(server.shutil, 'copy2', full_disk)
+    assert server.prepare_profiles(local_profiles=local) == 'copy-failed'
+    monkeypatch.undo()
+    assert server.prepare_profiles(local_profiles=local) == 'copied', "the next launch tries again"
+
+
 def test_startup_brings_this_pcs_profiles_in(server, tmp_path, seed):
     prof, local = tmp_path / 'drive' / 'profiles', tmp_path / 'appdata' / 'profiles'
     write_profiles(local, ['Gaming'])
@@ -244,6 +313,10 @@ def test_startup_seeds_a_this_pc_only_folder(server, tmp_path, seed):
 
 def test_data_location_endpoint(server, tmp_path):
     server.DATA_HOW, server.PROFILES_DIR, server.MIGRATION = 'shared', tmp_path / 'p', 'not-merged'
+    server.STORED_FILE = tmp_path / 'p' / 'stored.json'
     r = server.app.test_client().get('/api/data-location').get_json()
     assert r['success'] and r['path'] == str(tmp_path / 'p') and r['how'] == 'shared' and r['shared'] is True
     assert r['migration'] == 'not-merged' and r['local_path'].endswith('profiles')
+    assert r['has_profiles'] is False
+    write_profiles(tmp_path / 'p', ['Gaming'])
+    assert server.app.test_client().get('/api/data-location').get_json()['has_profiles'] is True
