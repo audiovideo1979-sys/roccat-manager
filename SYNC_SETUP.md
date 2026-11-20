@@ -15,7 +15,9 @@ Both live in Google Drive, side by side:
 your user folder when Drive is in "mirror files" mode. No `setx`, no environment variable. The sidebar
 shows which folder it is using:
 
-- **"Profiles: shared through Google Drive"** (green) — synced, all good.
+- **"Profiles: shared through Google Drive"** (green) — this boot is using the Drive folder. It can't tell
+  whether Drive has finished syncing, so after switching boots wait for the Drive tray icon to say it is
+  up to date before you open the app.
 - **"Profiles: this PC only (...)"** (amber) — Google Drive wasn't running or the folder wasn't found.
   Start Google Drive, then reopen the app. Hover the line to see the exact folder.
 - **"...no profiles saved there yet - showing the built-in examples"** (amber) — the Drive folder is there
@@ -23,6 +25,14 @@ shows which folder it is using:
   the mouse yet: wait for Drive, then reopen.
 - **"...this PC's own profiles are different and were not merged"** (amber) — see below.
 - **"...couldn't copy this PC's profiles into Google Drive"** (amber) — close and reopen to try again.
+- **"...can't read the profiles file in Google Drive"** (amber) — Drive hasn't downloaded it yet (or it is
+  damaged). Nothing was changed; let Drive finish, then reopen.
+- **"...started from the built-in examples"** (amber) — the shared profiles were made on a boot that had
+  none of its own. If your other boot has its own profiles, they replace these when it opens the app
+  (the examples-based ones are kept in `replaced-<date>`).
+- If Drive delivers your profiles while the app is open on the built-in examples, the next change you make
+  is refused with "Your profiles just arrived from Google Drive" and the app reloads them, so the examples
+  (which share names with your real profiles) can't overwrite them. Make the change again after.
 
 The old `ROCCAT_MANAGER_DATA` variable still works and still wins if it is set.
 
@@ -75,13 +85,22 @@ always on the disk even before Drive has finished starting.
   amber: "This PC's own profiles are different and were not merged". Hover it to see both folders.
   Nothing is deleted; copy what you want across by hand, or rename that PC-only folder to clear it.
 - After the copy, the PC-only folder gets a note, `MOVED TO GOOGLE DRIVE.txt`, so it isn't copied twice.
-  If profiles in that folder change later (an old copy of the app still pinned to the taskbar, or a session
-  while Google Drive was off), the same amber line appears rather than those edits quietly going missing.
-  Unpin any old copy of the app.
+  If profiles or slot assignments in that folder change later (an old copy of the app still pinned to the
+  taskbar, or a session while Google Drive was off), the same amber line appears rather than those edits
+  quietly going missing; they are never copied over the shared ones. Unpin any old copy of the app.
+- If Drive ever ends up with the other boot's examples-based copy instead of the profiles this boot
+  brought in, this boot copies its own in again on its next start (the other copy goes to `replaced-<date>`).
 
 ## Updating the app later
-- On the Personal boot: `git pull`, then `build.bat`. It replaces the .exe in Drive (close the app first,
-  or the copy fails and `build.bat` says so). Wait for Drive to sync before using it on the Work boot.
+- On the Personal boot, close ROCCAT Manager, then in Command Prompt:
+  ```
+  cd /d "%USERPROFILE%\Downloads\roccat-src\roccat-manager"
+  git pull --ff-only
+  build.bat
+  ```
+  It replaces the .exe in Drive (if the app was still open the copy fails and `build.bat` says so). Wait
+  for Drive to sync before using it on the Work boot. (Don't re-run the first-time `git clone` block: the
+  clone fails because the folder exists, and `build.bat` would rebuild the old code.)
 
 ## Gotchas
 - Building **inside** a Google Drive folder can be slow or fail while Drive syncs — build from a normal

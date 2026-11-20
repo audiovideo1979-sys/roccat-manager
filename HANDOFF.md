@@ -22,7 +22,13 @@ README). Replaced by zero-setup sync, see `SYNC_SETUP.md`:
   skipped until the shared folder has profiles; `copy-failed` is reported; local edits newer than the
   note → `not-merged`. Each fix has a test that fails without it (mutation-checked). Every boot leaves
   the note on its first shared-mode start even with nothing to bring, so a later Drive-off session's
-  local edits can't be copied over a `from_defaults` shared set.
+  local edits can't be copied over a `from_defaults` shared set. Third review: the note holds a fingerprint
+  (`state:` line, sha1 of stored.json + slots without active_slot) instead of relying on mtimes; a page
+  that loaded the examples (`/api/stored` `source`) is refused (409, `before_request`) once saved profiles
+  exist, so a late Drive delivery can't be overwritten by example data with the same ids; the
+  examples-based and unreadable states have their own amber lines. Not fixed (judged unreachable here):
+  a Work boot whose very first run falls back to %APPDATA% and edits the examples there would bring them
+  in as a real set (`not-merged` on Personal, nothing lost).
 - Sidebar line + `GET /api/data-location`. `build.bat` copies the exe into `ROCCAT_Manager_Full`.
 - Next on the PC: Personal boot builds + runs from Drive (profiles migrate), Work boot runs the same exe.
   **Untested on hardware:** a boot without Swarm II opens the receiver through the bundled hidapi

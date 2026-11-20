@@ -32,13 +32,24 @@ ROCCAT Manager Full — Changelog
     fallback) could have copied its edits over a shared set built from the examples. Every boot
     now leaves the note on its first connection even with nothing to bring, so later local
     changes are only ever reported ("not-merged"), never copied.
+  - Third review (state-machine sweep over launch sequences + a literal walkthrough of SYNC_SETUP,
+    a skeptic per lens; 6 of 9 confirmed, all low) fixed:
+    a page opened before Drive delivered this side's profiles could, once they arrived, write
+    example data over the real profiles with the same ids -> GET /api/stored returns "source"
+    (examples/saved), the page sends X-Profiles-Source with every write, and a stale page
+    gets 409 + reload; slot-only edits after the move (old pinned exe) were missed -> the note
+    holds a fingerprint of stored.json + slots (active slot excluded); a set displaced in Drive
+    by an examples-based copy is copied in again; an unreadable shared stored.json left the
+    page on "Loading..." -> loadAll always runs loadDataLocation, "readable" + amber line; an
+    examples-based shared set shows amber, not green; SYNC_SETUP: green = using Drive (can't
+    know it is synced), exact update commands.
   - Fixed (from @6): deleting a profile after any push/switch crashed (TypeError) because
     slots.json also holds "active_slot"; the profile was removed but its slots not cleared.
   - build.bat debug no longer copies the console build over the shared exe.
   - GET /api/data-location + sidebar line: "shared through Google Drive" or "this PC only".
   - build.bat copies dist\ROCCAT Manager.exe into Drive ...\ROCCAT_Manager_Full (no labels/goto:
     the repo stores .bat with LF endings).
-  - SYNC_SETUP.md rewritten (no setx). Tests: 128 pass (tests/test_data_location.py).
+  - SYNC_SETUP.md rewritten (no setx). Tests: 133 pass (tests/test_data_location.py).
 
 @6 — 2026-09-19 (stuck-modifier fix, busy lock, active-profile memory)
   - Stuck keyboard modifier fix: a mouse button bound to Ctrl/Alt/Shift/Win could leave

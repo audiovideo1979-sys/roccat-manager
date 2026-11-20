@@ -164,6 +164,74 @@ def test_slot_assignments_count_as_this_pcs_own(server, tmp_path, seed):
         assert server.migrate_local_profiles(shared, local, seed) == expected, name
 
 
+def test_a_slot_change_on_this_pc_after_the_move_is_reported(server, tmp_path, seed):
+    # third review: the old pinned app reassigns a slot (slots.json only) after the move
+    local, shared = tmp_path / 'appdata' / 'profiles', tmp_path / 'drive' / 'profiles'
+    write_profiles(local, ['Gaming', 'Work'])
+    assert server.migrate_local_profiles(shared, local, seed) == 'copied'
+    slots = json.loads((local / 'slots.json').read_text())
+    slots['active_slot'] = 4                                    # a plain profile switch: not an edit
+    (local / 'slots.json').write_text(json.dumps(slots))
+    assert server.migrate_local_profiles(shared, local, seed) is None
+    slots['boot1'][2] = 'Work'                                  # a real slot assignment
+    (local / 'slots.json').write_text(json.dumps(slots))
+    assert server.migrate_local_profiles(shared, local, seed) == 'not-merged'
+    assert json.loads((shared / 'slots.json').read_text())['boot1'][2] is None
+
+
+def test_profiles_displaced_by_an_examples_copy_are_brought_back(server, tmp_path, seed):
+    # third review: this PC copied its set in, then Google Drive kept the other side's copy that was started
+    # from the examples (an edit made there before the upload arrived)
+    local, shared = tmp_path / 'appdata' / 'profiles', tmp_path / 'drive' / 'profiles'
+    write_profiles(local, ['Gaming'])
+    assert server.migrate_local_profiles(shared, local, seed) == 'copied'
+    (shared / 'stored.json').write_text(json.dumps({'profiles': [{'id': 'wwm', 'name': 'WWM'}],
+                                                     server.FROM_DEFAULTS: True}))
+    assert server.migrate_local_profiles(shared, local, seed, stamp='T') == 'copied'
+    assert names_in(shared) == ['Gaming'] and names_in(shared / 'replaced-T') == ['WWM']
+
+
+def test_a_page_still_on_the_examples_cannot_overwrite_profiles_that_arrived(server, tmp_path, seed):
+    # third review: the app opened before Google Drive delivered this side's profiles (the page shows the
+    # examples, which share ids with the real set); Drive delivers; the next edit must not overwrite them
+    shared = tmp_path / 'drive' / 'profiles'
+    point_at(server, shared, 'shared', seed)
+    client = server.app.test_client()
+    page = client.get('/api/stored').get_json()
+    assert page['source'] == 'examples'
+    write_profiles(shared, ['Main Test'])                       # Google Drive delivers the real set
+    stale = {'X-Profiles-Source': page['source']}
+    r = client.put('/api/stored/Main Test', json={'name': 'Main Test', 'dpi': 800}, headers=stale)
+    assert r.status_code == 409 and r.get_json()['reload'] is True
+    assert client.delete('/api/stored/Main Test', headers=stale).status_code == 409
+    assert names_in(shared) == ['Main Test'] and 'dpi' not in json.loads((shared / 'stored.json').read_text())['profiles'][0]
+    assert client.post('/api/release-modifiers', headers=stale).status_code != 409, "the keyboard fix always works"
+    fresh = client.get('/api/stored').get_json()                # after the reload
+    assert fresh['source'] == 'saved'
+    r = client.put('/api/stored/Main Test', json={'name': 'Main Test', 'dpi': 800},
+                   headers={'X-Profiles-Source': fresh['source']})
+    assert r.status_code == 200
+
+
+def test_the_examples_page_can_save_while_nothing_arrived(server, tmp_path, seed):
+    shared = tmp_path / 'drive' / 'profiles'
+    point_at(server, shared, 'shared', seed)
+    client = server.app.test_client()
+    hdr = {'X-Profiles-Source': client.get('/api/stored').get_json()['source']}
+    assert client.delete('/api/stored/WWM', headers=hdr).status_code == 200
+    assert client.delete('/api/stored/Grounded', headers=hdr).status_code == 200, "its own save keeps it 'examples'"
+    assert names_in(shared) == ['Main Test']
+
+
+def test_an_unreadable_shared_file_is_reported(server, tmp_path, seed):
+    shared = tmp_path / 'drive' / 'profiles'
+    point_at(server, shared, 'shared', seed)
+    shared.mkdir(parents=True)
+    (shared / 'stored.json').write_text('{"profiles": [')        # truncated / not downloaded
+    r = server.app.test_client().get('/api/data-location').get_json()
+    assert r['has_profiles'] is True and r['readable'] is False
+
+
 def test_a_session_while_drive_was_off_never_replaces_the_shared_profiles(server, tmp_path, seed):
     # both boots built their set from the examples (marked from_defaults); later one boot runs with Google
     # Drive off, falls back to this PC's folder, and something is edited there
@@ -317,6 +385,7 @@ def test_data_location_endpoint(server, tmp_path):
     r = server.app.test_client().get('/api/data-location').get_json()
     assert r['success'] and r['path'] == str(tmp_path / 'p') and r['how'] == 'shared' and r['shared'] is True
     assert r['migration'] == 'not-merged' and r['local_path'].endswith('profiles')
+    assert r['source'] == 'examples' and r['readable'] is True
     assert r['has_profiles'] is False
     write_profiles(tmp_path / 'p', ['Gaming'])
     assert server.app.test_client().get('/api/data-location').get_json()['has_profiles'] is True

@@ -4,6 +4,7 @@ Run: python server.py
 Opens at http://localhost:5555
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -131,12 +132,37 @@ def _newer(a, b):
         return False
 
 
+def _fingerprint(folder):
+    """What this PC's profiles were when the note was written: stored.json + slot assignments (the
+    remembered active slot left out: a profile switch is not an edit)."""
+    stored = _read_json_file(folder / "stored.json")
+    slots = _without_active_slot(_read_json_file(folder / "slots.json"))
+    return hashlib.sha1(json.dumps([stored, slots], sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _note_state(note):
+    try:
+        for line in note.read_text().splitlines():
+            if line.startswith("state: "):
+                return line[len("state: "):].strip()
+    except OSError:
+        pass
+    return None
+
+
+def _same_profiles(a, b):
+    return (_read_json_file(a / "stored.json") == _read_json_file(b / "stored.json")
+            and _without_active_slot(_read_json_file(a / "slots.json"))
+            == _without_active_slot(_read_json_file(b / "slots.json")))
+
+
 def _write_moved_note(local_profiles, shared_profiles):
     try:
         local_profiles.mkdir(parents=True, exist_ok=True)
         (local_profiles / MOVED_NOTE).write_text(
             "ROCCAT Manager keeps profiles in the Google Drive folder\n  %s\nso both boots share them. "
-            "Anything in this folder is this PC's own old copy, kept as a backup.\n" % shared_profiles)
+            "Anything in this folder is this PC's own old copy, kept as a backup.\n\nstate: %s\n"
+            % (shared_profiles, _fingerprint(local_profiles)))
     except OSError:
         pass
 
@@ -160,10 +186,17 @@ def migrate_local_profiles(shared_profiles, local_profiles, seed_dir, stamp=None
             _write_moved_note(local_profiles, shared_profiles)
         return None
     if note.exists():
-        if not _newer(local_stored, note):
-            return None                # connected before, not changed here since
-        same = _read_json_file(shared_profiles / "stored.json") == _read_json_file(local_stored)
-        return None if same else "not-merged"
+        recorded = _note_state(note)
+        changed = _fingerprint(local_profiles) != recorded if recorded else _newer(local_stored, note)
+        if changed:                    # edited here after connecting: report it, never copy it over
+            if _same_profiles(local_profiles, shared_profiles):
+                _write_moved_note(local_profiles, shared_profiles)
+                return None
+            return "not-merged"
+        if has_real_profiles(shared_profiles, seed_dir):
+            return None                # connected before, nothing changed here since
+        # this PC's own profiles were brought over before, but the shared folder no longer holds real ones
+        # (e.g. Google Drive kept the other side's copy started from the examples): bring them in again
     if _read_json_file(local_stored) is None:
         return "not-merged"            # damaged: don't spread it to the other side; the user is told instead
     if has_real_profiles(shared_profiles, seed_dir):
@@ -265,6 +298,17 @@ def _profile_file(path):
         return SEED_DIR / path.name
     return path
 
+def profiles_source():
+    """"examples" while a shared folder holds no profiles of anyone's own (nothing saved yet, or a set started
+    from the built-in examples), else "saved". The page sends back what it loaded with every write."""
+    if DATA_HOW in ("shared", "env"):
+        if not STORED_FILE.exists():
+            return "examples"
+        data = _read_json_file(STORED_FILE)
+        if isinstance(data, dict) and data.get(FROM_DEFAULTS):
+            return "examples"
+    return "saved"
+
 def load_stored():
     data = load_json(_profile_file(STORED_FILE))
     return data.get("profiles", [])
@@ -354,7 +398,23 @@ def favicon():
 # ── Routes — Stored Profiles ─────────────────────────────────────────────────
 @app.route("/api/stored", methods=["GET"])
 def get_stored():
-    return jsonify({"profiles": load_stored()})
+    return jsonify({"profiles": load_stored(), "source": profiles_source()})
+
+
+# Writes that are harmless whatever profiles the page holds (keyboard fix, settings, diagnostics, a plain switch)
+_ANY_PAGE_MAY_WRITE = ("/api/release-modifiers", "/api/mouse/config", "/api/mouse/read-pages", "/api/switch-profile/")
+
+@app.before_request
+def _refuse_writes_from_a_page_still_on_the_examples():
+    # The page opened before Google Drive delivered this side's profiles and still shows the built-in examples,
+    # which share ids with the real set: a save now would write example data over a real profile.
+    if (request.method in ("POST", "PUT", "DELETE") and request.path.startswith("/api/")
+            and not request.path.startswith(_ANY_PAGE_MAY_WRITE)
+            and request.headers.get("X-Profiles-Source") == "examples" and profiles_source() == "saved"):
+        return jsonify({"success": False, "reload": True,
+                        "error": "Your profiles just arrived from Google Drive, so nothing was changed. "
+                                 "Reloading them now - then make that change again."}), 409
+    return None
 
 @app.route("/api/stored", methods=["POST"])
 def create_stored():
@@ -630,7 +690,8 @@ def data_location():
     """Where profiles are saved, so each side can show it is using the shared Google Drive folder."""
     return jsonify({"success": True, "path": str(PROFILES_DIR), "how": DATA_HOW,
                     "shared": DATA_HOW in ("shared", "env"), "migration": MIGRATION,
-                    "has_profiles": STORED_FILE.exists(),
+                    "has_profiles": STORED_FILE.exists(), "source": profiles_source(),
+                    "readable": not STORED_FILE.exists() or _read_json_file(STORED_FILE) is not None,
                     "local_path": str(_local_data_dir() / "profiles")})
 
 

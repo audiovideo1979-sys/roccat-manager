@@ -852,6 +852,28 @@ function switchBoot(bootId) {
 }
 
 // ── API calls ──────────────────────────────────────────────────────────────
+// Every write tells the server which profiles this page loaded: the built-in examples (the shared Google Drive
+// folder had none yet) or saved ones. If this side's real profiles arrived from Drive while the page was open,
+// the server refuses the write (409) instead of letting example data overwrite them, and the page reloads.
+let profilesSource = 'saved';
+const _plainFetch = window.fetch.bind(window);
+window.fetch = async (url, opts = {}) => {
+  const isWrite = typeof url === 'string' && url.startsWith('/api/')
+                  && (opts.method || 'GET').toUpperCase() !== 'GET';
+  if (isWrite) {
+    opts = Object.assign({}, opts, { headers: Object.assign({}, opts.headers || {}, { 'X-Profiles-Source': profilesSource }) });
+  }
+  const res = await _plainFetch(url, opts);
+  if (isWrite && res.status === 409) {
+    const data = await res.clone().json().catch(() => ({}));
+    if (data.reload) {
+      toast(data.error || 'Your profiles just arrived from Google Drive - reloading', 'error');
+      setTimeout(() => location.reload(), 3000);
+    }
+  }
+  return res;
+};
+
 async function apiFetch(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
@@ -863,6 +885,7 @@ async function apiFetch(method, path, body) {
 async function loadStored() {
   const data = await apiFetch('GET', '/stored');
   storedProfiles = data.profiles || [];
+  profilesSource = data.source || 'saved';
   renderStoredList();
   // If selected profile no longer exists, deselect
   if (selectedProfileId && !storedProfiles.find(p => p.id === selectedProfileId)) {
@@ -932,9 +955,16 @@ async function loadDataLocation() {
       el.textContent = "Profiles: shared through Google Drive. This PC's own profiles are different and were not merged (hover to see where they are)";
       el.style.color = 'var(--amber-txt)';
       el.title = both;
+    } else if (data.shared && data.has_profiles && !data.readable) {
+      el.textContent = "Profiles: can't read the profiles file in Google Drive (not downloaded yet, or damaged). Nothing was changed. Let Google Drive finish syncing, then reopen.";
+      el.style.color = 'var(--amber-txt)';
     } else if (data.shared && !data.has_profiles) {
       // nothing saved in the shared folder yet: the built-in example profiles are showing
       el.textContent = 'Profiles: Google Drive folder found, but no profiles saved there yet - showing the built-in examples. If your other PC has profiles, let Google Drive finish syncing, then reopen.';
+      el.style.color = 'var(--amber-txt)';
+    } else if (data.shared && data.source === 'examples') {
+      // saved here, but started from the built-in examples: a PC with its own profiles replaces these
+      el.textContent = "Profiles: shared through Google Drive - started from the built-in examples. If your other PC has its own profiles, they replace these the next time it opens the app.";
       el.style.color = 'var(--amber-txt)';
     } else if (data.shared) {
       el.textContent = 'Profiles: shared through Google Drive';
@@ -956,9 +986,13 @@ async function loadDataLocation() {
 
 async function loadAll() {
   setStatus('Loading...');
-  await Promise.all([loadStored(), loadSlots()]);
-  await loadMouseStatus();
-  await loadDataLocation();
+  try {
+    await Promise.all([loadStored(), loadSlots()]);
+  } catch (e) {
+    setStatus("Couldn't load the profiles - see the note at the bottom left");
+  }
+  try { await loadMouseStatus(); } catch (e) { /* the status line says what it can */ }
+  await loadDataLocation();   // always: it explains a profiles file that can't be read
 }
 
 // ── Active Slots Rendering ─────────────────────────────────────────────────
