@@ -986,12 +986,14 @@ async function loadDataLocation() {
 
 async function loadAll() {
   setStatus('Loading...');
+  let profilesFailed = false;
   try {
     await Promise.all([loadStored(), loadSlots()]);
   } catch (e) {
-    setStatus("Couldn't load the profiles - see the note at the bottom left");
+    profilesFailed = true;
   }
   try { await loadMouseStatus(); } catch (e) { /* the status line says what it can */ }
+  if (profilesFailed) setStatus("Couldn't load the profiles - see the note at the bottom left");  // after the mouse status, so it stays
   await loadDataLocation();   // always: it explains a profiles file that can't be read
 }
 
