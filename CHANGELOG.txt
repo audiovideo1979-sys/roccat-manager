@@ -7,14 +7,25 @@ ROCCAT Manager Full — Changelog
     folder; runnable from build.bat. Added to roccat_manager.spec hiddenimports.
   - server.py: the packaged app uses the existing Drive folder "ROCCAT Manager Data" (beside
     the exe's folder, else in Drive) without ROCCAT_MANAGER_DATA (still honoured, still wins);
-    falls back to %APPDATA%. First run there copies this PC's local profiles in, only over an
-    empty folder or seeded defaults (.seeded-defaults marker; defaults kept in
-    defaults-backup-<stamp>); real shared profiles are never overwritten, local copy kept.
-    Paths compared with abspath/samefile, not resolve() (Drive's virtual drive letter).
+    falls back to %APPDATA%. First run there copies this PC's local profiles in once (note
+    "MOVED TO GOOGLE DRIVE.txt" left in the local folder), only when they are real (stored.json
+    differs from the shipped seed, unchanged since March) and the shared folder has no real
+    ones; the shared folder's files are backed up to replaced-<stamp> first; stored.json is
+    copied last so a cut-short copy is redone. Different real profiles on both sides ->
+    "not-merged", shown amber in the sidebar; a damaged local stored.json is reported, not
+    copied. A shared folder is never seeded: the defaults are read from the bundle until the
+    first save. Paths compared with abspath/samefile, not resolve() (Drive's virtual letter).
+  - Independent review before shipping found the first version (a .seeded-defaults marker)
+    could lose the personal side's profiles if the work side ran first: its old %APPDATA%
+    defaults counted as real, and a profile switch (active_slot write) deleted the marker.
+    Replaced by the content check above; both scenarios are tests now.
+  - Fixed (from @6): deleting a profile after any push/switch crashed (TypeError) because
+    slots.json also holds "active_slot"; the profile was removed but its slots not cleared.
+  - build.bat debug no longer copies the console build over the shared exe.
   - GET /api/data-location + sidebar line: "shared through Google Drive" or "this PC only".
   - build.bat copies dist\ROCCAT Manager.exe into Drive ...\ROCCAT_Manager_Full (no labels/goto:
     the repo stores .bat with LF endings).
-  - SYNC_SETUP.md rewritten (no setx). Tests: 114 pass (tests/test_data_location.py).
+  - SYNC_SETUP.md rewritten (no setx). Tests: 123 pass (tests/test_data_location.py).
 
 @6 — 2026-09-19 (stuck-modifier fix, busy lock, active-profile memory)
   - Stuck keyboard modifier fix: a mouse button bound to Ctrl/Alt/Shift/Win could leave

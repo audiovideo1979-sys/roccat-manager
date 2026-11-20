@@ -59,11 +59,15 @@ always on the disk even before Drive has finished starting.
 ## How it stays in sync
 - Edit a profile on one boot → Drive uploads `ROCCAT Manager Data` → the other boot sees it the next time
   the app starts there. Let Drive finish uploading before you reboot.
-- Copying profiles in (step 3 above) only happens when the shared folder has no profiles yet, or only the
-  defaults the app put there on its very first run (marked with a `.seeded-defaults` file; those defaults
-  are kept in a `defaults-backup-<date>` folder). Profiles that were really edited are never overwritten.
-  So if the Work boot runs first, that's fine — the Personal boot's profiles still come in afterwards, as
-  long as nothing was edited on the Work boot in between.
+- Copying profiles in (step 3 above) happens once per boot, and only when that boot has profiles of its
+  own (not just the shipped defaults) and the shared folder has none yet. Whatever was in the shared folder
+  is first copied to a `replaced-<date>` folder. Real shared profiles are never overwritten.
+- A boot that only ever had the defaults never writes them into Drive, so it doesn't matter which boot
+  runs first, and switching profiles on the Work boot first doesn't block anything.
+- If both boots already had their own, different profiles, the ones in Drive win and the sidebar turns
+  amber: "This PC's own older profiles were not merged". Hover it to see both folders. Nothing is deleted;
+  copy what you want across by hand, or rename that PC-only folder to make the message go away.
+- After the copy, the PC-only folder gets a note, `MOVED TO GOOGLE DRIVE.txt`, so it isn't copied twice.
 
 ## Updating the app later
 - On the Personal boot: `git pull`, then `build.bat`. It replaces the .exe in Drive (close the app first,

@@ -8,15 +8,23 @@ README). Replaced by zero-setup sync, see `SYNC_SETUP.md`:
   (mirror mode) or on any fixed/network drive letter, G: first (removable/optical skipped: no "no disk"
   pop-ups). Used by `server.py` and by `build.bat`.
 - `server.resolve_data_dir`: env var → `ROCCAT Manager Data` beside the exe's folder or in Drive (only if
-  it already exists) → `%APPDATA%`. `migrate_local_profiles`: first run against the shared folder copies
-  `%APPDATA%\ROCCAT Manager\profiles\*.json` in — only when the shared folder has no stored.json, or only
-  seeded defaults (`.seeded-defaults` marker, written by `seed_profiles` in a shared folder, removed by any
-  stored/slots save; the defaults go to `defaults-backup-<stamp>`). Local copy is kept.
+  it already exists) → `%APPDATA%`. `prepare_profiles` (startup) → `migrate_local_profiles`: copies
+  `%APPDATA%\ROCCAT Manager\profiles\*.json` in once, only when they are real (`has_real_profiles`:
+  stored.json differs from the bundled seed, which has not changed since March) and the shared folder has
+  no real ones; backs the shared files up to `replaced-<stamp>` first; leaves `MOVED TO GOOGLE DRIVE.txt`
+  locally. Different real profiles on both sides → `"not-merged"` (amber sidebar line, nothing touched).
+  A shared folder is never seeded (`_profile_file` reads the bundle's defaults until the first save), so
+  a defaults-only side can't block or overwrite the other. The first version used a `.seeded-defaults`
+  marker; the pre-ship review broke it two ways (work side's old local defaults; active_slot write cleared
+  the marker) — both are tests now.
 - Sidebar line + `GET /api/data-location`. `build.bat` copies the exe into `ROCCAT_Manager_Full`.
 - Next on the PC: Personal boot builds + runs from Drive (profiles migrate), Work boot runs the same exe.
   **Untested on hardware:** a boot without Swarm II opens the receiver through the bundled hidapi
   (backend `auto` falls back from Swarm's DLL to `hid`); only the DLL path is confirmed. If the Work boot
   shows the mouse but pushes fail, that fallback is the first suspect.
+- Known limits: Drive must finish syncing before the other boot starts the app (a boot that starts early
+  sees no shared profiles yet and a save there makes Drive keep two copies of stored.json); a profile file
+  Drive hasn't downloaded yet can't be read while offline ("Available offline" avoids both).
 
 ## Confirmed on hardware (2026-09-19, PC run)
 

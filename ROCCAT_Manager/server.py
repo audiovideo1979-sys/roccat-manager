@@ -35,7 +35,7 @@ def _bundle_base():
 # folder, or at My Drive\Claude Folder\Projects\Personal\ROCCAT Manager Data on whatever drive letter Google
 # Drive for desktop uses on that side (drivefolders.py).
 SHARED_DATA_NAME = "ROCCAT Manager Data"
-SEEDED_MARKER = ".seeded-defaults"   # in a shared profiles folder that so far only holds the shipped defaults
+MOVED_NOTE = "MOVED TO GOOGLE DRIVE.txt"   # left in this PC's own profiles folder once they were copied over
 
 
 def _local_data_dir():
@@ -89,28 +89,65 @@ def _same_folder(a, b):
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
-def migrate_local_profiles(shared_profiles, local_profiles, stamp=None):
-    """First run against the shared folder: bring this PC's own profiles along. Copies (the local copy stays as
-    a backup), and only when the shared folder has no profiles yet or just the defaults the other side seeded
-    there (those are moved into a defaults-backup folder). Real shared profiles are never overwritten."""
-    if not (local_profiles / "stored.json").is_file():
+def _read_json_file(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def has_real_profiles(folder, seed_dir):
+    """True when folder/stored.json exists and is not just the shipped defaults. Every build seeds the same
+    file (unchanged since March 2026), so equal-to-the-seed means it was never edited. An unreadable file
+    counts as real: it is the user's, never something to replace."""
+    f = folder / "stored.json"
+    if not f.is_file():
         return False
+    data = _read_json_file(f)
+    return data is None or data != _read_json_file(seed_dir / "stored.json")
+
+
+def _write_moved_note(local_profiles, shared_profiles):
+    try:
+        (local_profiles / MOVED_NOTE).write_text(
+            "ROCCAT Manager now keeps profiles in the Google Drive folder\n  %s\nso both boots share them. "
+            "The files here are an old copy, kept as a backup.\n" % shared_profiles)
+    except OSError:
+        pass
+
+
+def migrate_local_profiles(shared_profiles, local_profiles, seed_dir, stamp=None):
+    """First run against the shared folder: bring this PC's own profiles along, once. Returns
+    "copied"      this PC's profiles were copied in (they stay here too, as a backup);
+    "not-merged"  the shared folder already has other real profiles, which win; this PC's are left alone;
+    None          nothing to do (no profiles of its own here, only the defaults, or already brought over).
+    Only real profiles count on either side, so the defaults on a side that never edited anything can't
+    block or overwrite the other side's. Anything already in the shared folder is backed up first."""
+    if not has_real_profiles(local_profiles, seed_dir) or (local_profiles / MOVED_NOTE).exists():
+        return None
     if _same_folder(shared_profiles, local_profiles):
-        return False
-    shared_stored, marker = shared_profiles / "stored.json", shared_profiles / SEEDED_MARKER
-    if shared_stored.exists() and not marker.exists():
-        return False
+        return None
+    if _read_json_file(local_profiles / "stored.json") is None:
+        return "not-merged"            # damaged: don't spread it to the other side; the user is told instead
+    if has_real_profiles(shared_profiles, seed_dir):
+        if _read_json_file(shared_profiles / "stored.json") == _read_json_file(local_profiles / "stored.json"):
+            _write_moved_note(local_profiles, shared_profiles)    # already the same profiles (copied by hand)
+            return None
+        return "not-merged"
     shared_profiles.mkdir(parents=True, exist_ok=True)
-    if shared_stored.exists():
-        backup = shared_profiles / ("defaults-backup-" + (stamp or time.strftime("%Y%m%d-%H%M%S")))
+    existing = sorted(shared_profiles.glob("*.json"))   # e.g. slots.json from a profile switch on the other side
+    if existing:
+        backup = shared_profiles / ("replaced-" + (stamp or time.strftime("%Y%m%d-%H%M%S")))
         backup.mkdir(parents=True, exist_ok=True)
-        for f in shared_profiles.glob("*.json"):
-            shutil.move(str(f), str(backup / f.name))
-    for f in local_profiles.glob("*.json"):
+        for f in existing:
+            shutil.copy2(str(f), str(backup / f.name))
+    # stored.json last: it is what marks the shared folder as holding real profiles, so a copy cut short is
+    # simply redone on the next launch
+    for f in sorted(local_profiles.glob("*.json"), key=lambda f: f.name == "stored.json"):
         shutil.copy2(str(f), str(shared_profiles / f.name))
-    if marker.exists():
-        marker.unlink()
-    return True
+    _write_moved_note(local_profiles, shared_profiles)
+    return "copied"
 
 
 # ── Paths ────────────────────────────────────────────────────────────────────
@@ -127,7 +164,7 @@ else:
     DATA_DIR, DATA_HOW = BASE_DIR, "dev"
 PROFILES_DIR  = DATA_DIR / "profiles"
 SEED_DIR      = BUNDLE_DIR / "profiles"        # defaults shipped in the bundle, copied on first run
-MIGRATED      = False                          # this run copied this PC's profiles into the shared folder
+MIGRATION     = None                           # what the first run against the shared folder did (see above)
 
 STORED_FILE = PROFILES_DIR / "stored.json"
 SLOTS_FILE  = PROFILES_DIR / "slots.json"
@@ -135,18 +172,29 @@ MOUSE_CONFIG_FILE = PROFILES_DIR / "mouse_config.json"
 
 
 def seed_profiles():
-    """On first run of the packaged app, copy the shipped default profiles into the user folder. In a shared
-    folder, mark them as defaults, so the side that has real profiles can still bring them in later."""
+    """On first run of the packaged app with a this-PC-only folder, copy the shipped default profiles in.
+    A shared folder is never seeded: the defaults are read from the bundle until the first save (see
+    _profile_file), so they can't sync over, or be mistaken for, the other side's profiles."""
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
     for name in ("stored.json", "slots.json"):
         dst, src = PROFILES_DIR / name, SEED_DIR / name
         if not dst.exists() and src.exists():
             try:
                 shutil.copy(src, dst)
-                if name == "stored.json" and DATA_HOW in ("shared", "env"):
-                    (PROFILES_DIR / SEEDED_MARKER).write_text("only the shipped defaults so far\n")
             except OSError:
                 pass
+
+
+def prepare_profiles(local_profiles=None):
+    """Startup of the packaged app: shared folder -> bring this PC's profiles in once; otherwise seed."""
+    if DATA_HOW in ("shared", "env"):
+        local_profiles = _local_data_dir() / "profiles" if local_profiles is None else local_profiles
+        try:
+            return migrate_local_profiles(PROFILES_DIR, local_profiles, SEED_DIR)
+        except OSError:
+            return None
+    seed_profiles()
+    return None
 
 
 # kone_xp_air (protocol + transports) lives at the repo root in dev; it is bundled in the exe
@@ -158,12 +206,7 @@ from kone_xp_air.transport import make_transport, TransportError, is_swarm_runni
 from kone_xp_air.winput import release_modifiers  # noqa: E402
 
 if FROZEN:
-    if DATA_HOW in ("shared", "env"):
-        try:
-            MIGRATED = migrate_local_profiles(PROFILES_DIR, _local_data_dir() / "profiles")
-        except OSError:
-            MIGRATED = False
-    seed_profiles()
+    MIGRATION = prepare_profiles()
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder=str(STATIC_DIR), template_folder=str(TEMPLATES_DIR))
@@ -179,23 +222,22 @@ def save_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
-    if path.name in ("stored.json", "slots.json"):   # real profile data now: no longer just the defaults
-        marker = path.parent / SEEDED_MARKER
-        if marker.exists():
-            try:
-                marker.unlink()
-            except OSError:
-                pass
+
+def _profile_file(path):
+    # shared folder, nothing saved there yet: read the shipped defaults straight from the bundle
+    if DATA_HOW in ("shared", "env") and not path.exists() and (SEED_DIR / path.name).exists():
+        return SEED_DIR / path.name
+    return path
 
 def load_stored():
-    data = load_json(STORED_FILE)
+    data = load_json(_profile_file(STORED_FILE))
     return data.get("profiles", [])
 
 def save_stored(profiles):
     save_json(STORED_FILE, {"profiles": profiles})
 
 def load_slots():
-    data = load_json(SLOTS_FILE)
+    data = load_json(_profile_file(SLOTS_FILE))
     if not data:
         data = {"boot1": [None]*5, "boot2": [None]*5}
     return data
@@ -306,8 +348,9 @@ def delete_stored(profile_id):
     save_stored(profiles)
     # Remove from any slots
     slots = load_slots()
-    for boot in slots:
-        slots[boot] = [None if s == profile_id else s for s in slots[boot]]
+    for boot, ids in slots.items():
+        if isinstance(ids, list):          # slots.json also holds "active_slot", a plain number
+            slots[boot] = [None if s == profile_id else s for s in ids]
     save_slots(slots)
     return jsonify({"success": True})
 
@@ -542,7 +585,8 @@ def mouse_log():
 def data_location():
     """Where profiles are saved, so each side can show it is using the shared Google Drive folder."""
     return jsonify({"success": True, "path": str(PROFILES_DIR), "how": DATA_HOW,
-                    "shared": DATA_HOW in ("shared", "env"), "migrated": MIGRATED})
+                    "shared": DATA_HOW in ("shared", "env"), "migration": MIGRATION,
+                    "local_path": str(_local_data_dir() / "profiles")})
 
 
 @app.route("/api/release-modifiers", methods=["POST"])

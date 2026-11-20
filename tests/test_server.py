@@ -147,6 +147,16 @@ def test_data_dir_override_points_at_a_shared_folder(server, monkeypatch, tmp_pa
     assert server.resolve_data_dir(candidates=[], local=tmp_path / 'local')[0] != shared
 
 
+def test_deleting_a_profile_after_a_switch_still_clears_its_slots(server, client):
+    # slots.json also holds "active_slot" (a number) once the mouse was switched; delete used to trip on it
+    pid = server.load_slots()['boot1'][0]
+    assert pid and client.post('/api/switch-profile/1').get_json()['success']
+    r = client.delete('/api/stored/' + pid)
+    assert r.status_code == 200 and r.get_json()['success']
+    slots = server.load_slots()
+    assert pid not in slots['boot1'] and slots['active_slot'] == 1
+
+
 def test_active_slot_persists_so_a_fresh_launch_shows_it(server, client):
     # a fresh install has no remembered active slot -> the UI shows nothing highlighted
     r = client.get('/api/slots/boot1').get_json()
