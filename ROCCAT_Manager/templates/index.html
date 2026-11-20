@@ -687,6 +687,7 @@
         </select>
       </div>
       <div id="mouse-status" style="font-size:10px;color:var(--text3);margin-top:4px;"></div>
+      <div id="data-location" style="font-size:10px;color:var(--text3);margin-top:4px;"></div>
     </div>
   </aside>
 
@@ -913,10 +914,33 @@ async function setTransport(kind) {
   loadMouseStatus();
 }
 
+async function loadDataLocation() {
+  // Shows whether this side uses the profile folder shared through Google Drive with the other side.
+  const el = document.getElementById('data-location');
+  try {
+    const data = await (await fetch('/api/data-location')).json();
+    if (!data.success) throw new Error('no data location');
+    el.title = data.path;
+    if (data.shared) {
+      el.textContent = 'Profiles: shared through Google Drive';
+      el.style.color = 'var(--green-txt)';
+    } else if (data.how === 'local') {
+      el.textContent = 'Profiles: this PC only (Google Drive folder not found - start Google Drive, then reopen)';
+      el.style.color = 'var(--amber-txt)';
+    } else {
+      el.textContent = 'Profiles: ' + data.path;
+    }
+    if (data.migrated) toast('Moved your profiles into Google Drive so both sides share them (a copy stays on this PC)', 'success');
+  } catch (e) {
+    el.textContent = '';
+  }
+}
+
 async function loadAll() {
   setStatus('Loading...');
   await Promise.all([loadStored(), loadSlots()]);
   await loadMouseStatus();
+  await loadDataLocation();
 }
 
 // ── Active Slots Rendering ─────────────────────────────────────────────────

@@ -11,11 +11,15 @@ import re
 import io
 import shutil
 import threading
+import time
 import zipfile
 from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, send_file
 
 FROZEN = getattr(sys, "frozen", False)   # running as a PyInstaller-built .exe
+if not FROZEN and str(Path(__file__).parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).parent))
+import drivefolders  # noqa: E402  (finds Google Drive's "My Drive" on any drive letter)
 
 
 def _bundle_base():
@@ -25,22 +29,88 @@ def _bundle_base():
     return Path(__file__).parent
 
 
-def _user_data_dir():
-    # Set ROCCAT_MANAGER_DATA to a shared folder (e.g. a Google Drive / OneDrive path) and every install
-    # that points there reads/writes the SAME profiles — that's how the two dual-boot sides stay in sync.
-    # If the shared folder can't be reached (drive not mounted yet), fall back to the per-user location.
-    override = os.environ.get("ROCCAT_MANAGER_DATA")
+# ── Where profiles live ───────────────────────────────────────────────────────
+# Both dual-boot sides share one profile folder through Google Drive (SYNC_SETUP.md). The app finds it on its
+# own, so neither side needs ROCCAT_MANAGER_DATA set: next to the program when the .exe runs from the Drive
+# folder, or at My Drive\Claude Folder\Projects\Personal\ROCCAT Manager Data on whatever drive letter Google
+# Drive for desktop uses on that side (drivefolders.py).
+SHARED_DATA_NAME = "ROCCAT Manager Data"
+SEEDED_MARKER = ".seeded-defaults"   # in a shared profiles folder that so far only holds the shipped defaults
+
+
+def _local_data_dir():
+    root = os.environ.get("APPDATA") or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~")
+    return Path(root) / "ROCCAT Manager"
+
+
+def shared_data_candidates(exe_path=None):
+    """Folders that, if they already exist, are the Google Drive profile folder both sides share."""
+    if exe_path:   # ...\ROCCAT_Manager_Full\ROCCAT Manager.exe -> ...\ROCCAT Manager Data
+        yield Path(os.path.abspath(exe_path)).parent.parent / SHARED_DATA_NAME
+    for d in drivefolders.personal_dirs():
+        yield d / SHARED_DATA_NAME
+
+
+def _is_dir(p):
+    try:
+        return p.is_dir()
+    except OSError:
+        return False
+
+
+def resolve_data_dir(env=None, exe_path=None, candidates=None, local=None):
+    """Pick the folder profiles live in. Returns (folder, how), how = "env", "shared" or "local":
+    1. ROCCAT_MANAGER_DATA if set (created if missing); 2. the shared Google Drive folder, only if it already
+    exists (never created here, so a typo can't start an empty profile set); 3. "ROCCAT Manager" in %APPDATA%."""
+    env = os.environ if env is None else env
+    override = env.get("ROCCAT_MANAGER_DATA")
     if override:
         try:
             d = Path(override)
             d.mkdir(parents=True, exist_ok=True)
-            return d
+            return d, "env"
         except OSError:
             pass
-    root = os.environ.get("APPDATA") or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~")
-    d = Path(root) / "ROCCAT Manager"
+    for d in (shared_data_candidates(exe_path) if candidates is None else candidates):
+        if _is_dir(d):
+            return d, "shared"
+    d = _local_data_dir() if local is None else local
     d.mkdir(parents=True, exist_ok=True)
-    return d
+    return d, "local"
+
+
+def _same_folder(a, b):
+    # not Path.resolve(): on Google Drive's virtual drive letter it can fail or return a volume path
+    try:
+        if a.exists() and b.exists():
+            return os.path.samefile(a, b)
+    except OSError:
+        pass
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def migrate_local_profiles(shared_profiles, local_profiles, stamp=None):
+    """First run against the shared folder: bring this PC's own profiles along. Copies (the local copy stays as
+    a backup), and only when the shared folder has no profiles yet or just the defaults the other side seeded
+    there (those are moved into a defaults-backup folder). Real shared profiles are never overwritten."""
+    if not (local_profiles / "stored.json").is_file():
+        return False
+    if _same_folder(shared_profiles, local_profiles):
+        return False
+    shared_stored, marker = shared_profiles / "stored.json", shared_profiles / SEEDED_MARKER
+    if shared_stored.exists() and not marker.exists():
+        return False
+    shared_profiles.mkdir(parents=True, exist_ok=True)
+    if shared_stored.exists():
+        backup = shared_profiles / ("defaults-backup-" + (stamp or time.strftime("%Y%m%d-%H%M%S")))
+        backup.mkdir(parents=True, exist_ok=True)
+        for f in shared_profiles.glob("*.json"):
+            shutil.move(str(f), str(backup / f.name))
+    for f in local_profiles.glob("*.json"):
+        shutil.copy2(str(f), str(shared_profiles / f.name))
+    if marker.exists():
+        marker.unlink()
+    return True
 
 
 # ── Paths ────────────────────────────────────────────────────────────────────
@@ -49,9 +119,15 @@ REPO_ROOT     = BASE_DIR.parent
 BUNDLE_DIR    = _bundle_base()                 # where templates/static/seed data live
 STATIC_DIR    = BUNDLE_DIR / "static"
 TEMPLATES_DIR = BUNDLE_DIR / "templates"
-# Profiles are user data: inside the exe the bundle is read-only, so persist them under %APPDATA%.
-PROFILES_DIR  = (_user_data_dir() / "profiles") if FROZEN else (BASE_DIR / "profiles")
+# Profiles are user data: inside the exe the bundle is read-only, so they live in the shared Google Drive
+# folder (or %APPDATA% when there is none). In dev they stay in the source tree.
+if FROZEN:
+    DATA_DIR, DATA_HOW = resolve_data_dir(exe_path=sys.executable)
+else:
+    DATA_DIR, DATA_HOW = BASE_DIR, "dev"
+PROFILES_DIR  = DATA_DIR / "profiles"
 SEED_DIR      = BUNDLE_DIR / "profiles"        # defaults shipped in the bundle, copied on first run
+MIGRATED      = False                          # this run copied this PC's profiles into the shared folder
 
 STORED_FILE = PROFILES_DIR / "stored.json"
 SLOTS_FILE  = PROFILES_DIR / "slots.json"
@@ -59,13 +135,16 @@ MOUSE_CONFIG_FILE = PROFILES_DIR / "mouse_config.json"
 
 
 def seed_profiles():
-    """On first run of the packaged app, copy the shipped default profiles into the user folder."""
+    """On first run of the packaged app, copy the shipped default profiles into the user folder. In a shared
+    folder, mark them as defaults, so the side that has real profiles can still bring them in later."""
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
     for name in ("stored.json", "slots.json"):
         dst, src = PROFILES_DIR / name, SEED_DIR / name
         if not dst.exists() and src.exists():
             try:
                 shutil.copy(src, dst)
+                if name == "stored.json" and DATA_HOW in ("shared", "env"):
+                    (PROFILES_DIR / SEEDED_MARKER).write_text("only the shipped defaults so far\n")
             except OSError:
                 pass
 
@@ -79,6 +158,11 @@ from kone_xp_air.transport import make_transport, TransportError, is_swarm_runni
 from kone_xp_air.winput import release_modifiers  # noqa: E402
 
 if FROZEN:
+    if DATA_HOW in ("shared", "env"):
+        try:
+            MIGRATED = migrate_local_profiles(PROFILES_DIR, _local_data_dir() / "profiles")
+        except OSError:
+            MIGRATED = False
     seed_profiles()
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
@@ -95,6 +179,13 @@ def save_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
+    if path.name in ("stored.json", "slots.json"):   # real profile data now: no longer just the defaults
+        marker = path.parent / SEEDED_MARKER
+        if marker.exists():
+            try:
+                marker.unlink()
+            except OSError:
+                pass
 
 def load_stored():
     data = load_json(STORED_FILE)
@@ -445,6 +536,13 @@ def mouse_config():
 @app.route("/api/mouse/log", methods=["GET"])
 def mouse_log():
     return jsonify({"success": True, "log": LAST_MOUSE_LOG})
+
+
+@app.route("/api/data-location", methods=["GET"])
+def data_location():
+    """Where profiles are saved, so each side can show it is using the shared Google Drive folder."""
+    return jsonify({"success": True, "path": str(PROFILES_DIR), "how": DATA_HOW,
+                    "shared": DATA_HOW in ("shared", "env"), "migrated": MIGRATED})
 
 
 @app.route("/api/release-modifiers", methods=["POST"])

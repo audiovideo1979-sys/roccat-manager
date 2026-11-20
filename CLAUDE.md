@@ -3,7 +3,7 @@
 ## On session start
 1. Read `HANDOFF.md` (state, open questions, the protocol reference).
 2. `CHANGELOG.txt` has the latest @N — continue from there.
-3. Run `python -m pytest -q tests` — 88 tests, no hardware needed. Keep it green.
+3. Run `python -m pytest -q tests` — 114 tests, no hardware needed. Keep it green.
 
 ## What it is
 Web UI (Flask, port 5555) that manages the five onboard profiles of a ROCCAT Kone XP Air (DPI, button
@@ -26,9 +26,12 @@ its USB receiver (VID 0x10F5, receiver PID 0x5017).
 ## Run
 - **Desktop app:** `build.bat` (Windows) packages `desktop.py` into `dist\ROCCAT Manager.exe` — a native
   WebView window (pywebview), no browser, no localhost URL. `build.bat debug` builds a console version.
-  Profiles persist under `%APPDATA%\ROCCAT Manager\profiles`, or under `ROCCAT_MANAGER_DATA` if that
-  env var is set — point both dual-boot installs at one Google Drive folder to keep profiles in sync
-  (see `SYNC_SETUP.md`).
+  It then copies the exe into the Google Drive folder `...\Personal\ROCCAT_Manager_Full` (found by
+  `ROCCAT_Manager/drivefolders.py` on any drive letter); both dual-boot sides run it from there.
+  Profiles: `ROCCAT_MANAGER_DATA` if set, else the Drive folder `...\Personal\ROCCAT Manager Data` if it
+  exists (auto-detected, no setup), else `%APPDATA%\ROCCAT Manager\profiles`. First run against the
+  shared folder copies this PC's local profiles in (never over real shared ones). See `SYNC_SETUP.md`;
+  `GET /api/data-location` and the sidebar say which folder is in use.
 - **Dev:** `python desktop.py` (native window) or `python ROCCAT_Manager/server.py` (browser at :5555).
 - Transport default is now **Direct** (confirmed on hardware 2026-09-19), backend **auto** (bundled
   hidapi, else Swarm's DLL). "Frida" (via Swarm) stays available in the sidebar.
@@ -47,6 +50,7 @@ its USB receiver (VID 0x10F5, receiver PID 0x5017).
 | POST | `/api/import-dat` (file or `{source:'onboard'}`) | stored profiles from Swarm exports |
 | GET | `/api/export/{id}`, `/api/export-all/{boot}` | legacy .dat export (zero checksums) |
 | GET | `/api/actions` | names the encoder supports |
+| GET | `/api/data-location` | profiles folder in use, `how` = env/shared/local/dev, `migrated` |
 
 ## Rules
 - Every packet or block change gets a test that pins it to a capture (`tests/test_sequences.py`,

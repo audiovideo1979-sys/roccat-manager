@@ -1,6 +1,21 @@
 ROCCAT Manager Full — Changelog
 ================================
 
+@7 — 2026-11-20 (both boots share the app and profiles through Google Drive, no setup)
+  - drivefolders.py: finds the Google Drive "Personal" projects folder on any drive letter
+    (GetLogicalDrives + GetDriveTypeW; fixed/network/RAM only, G: first) or under the user
+    folder; runnable from build.bat. Added to roccat_manager.spec hiddenimports.
+  - server.py: the packaged app uses the existing Drive folder "ROCCAT Manager Data" (beside
+    the exe's folder, else in Drive) without ROCCAT_MANAGER_DATA (still honoured, still wins);
+    falls back to %APPDATA%. First run there copies this PC's local profiles in, only over an
+    empty folder or seeded defaults (.seeded-defaults marker; defaults kept in
+    defaults-backup-<stamp>); real shared profiles are never overwritten, local copy kept.
+    Paths compared with abspath/samefile, not resolve() (Drive's virtual drive letter).
+  - GET /api/data-location + sidebar line: "shared through Google Drive" or "this PC only".
+  - build.bat copies dist\ROCCAT Manager.exe into Drive ...\ROCCAT_Manager_Full (no labels/goto:
+    the repo stores .bat with LF endings).
+  - SYNC_SETUP.md rewritten (no setx). Tests: 114 pass (tests/test_data_location.py).
+
 @6 — 2026-09-19 (stuck-modifier fix, busy lock, active-profile memory)
   - Stuck keyboard modifier fix: a mouse button bound to Ctrl/Alt/Shift/Win could leave
     that modifier "held" in Windows after a profile switch (keyboard goes dead). New
