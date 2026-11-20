@@ -32,8 +32,9 @@ its USB receiver (VID 0x10F5, receiver PID 0x5017).
   exists (auto-detected, no setup), else `%APPDATA%\ROCCAT Manager\profiles`. First run against the
   shared folder copies this PC's local profiles in (never over real shared ones). See `SYNC_SETUP.md`;
   `GET /api/data-location` and the sidebar say which folder is in use.
-- **Public download:** github.com/audiovideo1979-sys/roccat-manager — a `v*` tag there builds the exe on
-  GitHub's Windows runner and publishes a release (`.github/workflows/release.yml`; inert inside the EOS
+- **Public download:** github.com/audiovideo1979-sys/roccat-manager (v1.0.0 out). The owner publishes a
+  version via Actions → Build Windows app → Run workflow (or a `v*` tag); GitHub builds the exe on its
+  Windows runner and publishes a release (`.github/workflows/release.yml`; inert inside the EOS
   monorepo). Keep that repo identical to this folder (port with `git format-patch --relative=roccat-manager`).
 - **Dev:** `python desktop.py` (native window) or `python ROCCAT_Manager/server.py` (browser at :5555).
 - Transport default is now **Direct** (confirmed on hardware 2026-09-19), backend **auto** (bundled

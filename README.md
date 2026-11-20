@@ -48,5 +48,6 @@ app says where.
 
 Python 3.12 (64-bit) on Windows: `build.bat` builds `dist\ROCCAT Manager.exe`; `python -m pytest -q tests`
 runs the tests (no mouse needed). How the mouse protocol works is in [HANDOFF.md](HANDOFF.md) and
-[CLAUDE.md](CLAUDE.md). A new version is published by pushing a tag such as `v1.0.1`: GitHub builds the
-program on Windows and attaches it to the release (`.github/workflows/release.yml`).
+[CLAUDE.md](CLAUDE.md). To publish a new version: **Actions → Build Windows app → Run workflow**, type the
+version (e.g. `v1.0.1`) in "Release to publish", run it. GitHub runs the tests, builds the program on Windows
+and attaches it to a new release (`.github/workflows/release.yml`; pushing a `v*` tag does the same).

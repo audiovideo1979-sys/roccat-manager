@@ -4,8 +4,12 @@
 
 The owner wants to share the app with a friend. Public home: `audiovideo1979-sys/roccat-manager` (main),
 kept identical to this `roccat-manager/` folder (changes are made here and ported with
-`git format-patch --relative=roccat-manager`). Releases: push a `v*` tag there and
-`.github/workflows/release.yml` builds the exe on GitHub's Windows runner and attaches it. The CI build is
+`git format-patch --relative=roccat-manager`). Releases: the owner runs **Actions → Build Windows app → Run
+workflow** with a version (Claude's GitHub access gets 403 on workflow dispatch and can't push tags; don't
+work around that), and `.github/workflows/release.yml` builds the exe on GitHub's Windows runner and attaches
+it. **v1.0.0 published 2026-11-20** (asset ROCCAT.Manager.exe, contents checked; not yet run on a mouse).
+The owner's Drive folder gets the exe by downloading it there as `ROCCAT Manager.exe` (Drive uploads from
+the cloud session are capped at 10 MB). The CI build is
 not the owner's local build (different Python patch level / package versions); confirm a release on the
 mouse before telling people it works. A PC without the Drive folder is a normal single-PC install.
 

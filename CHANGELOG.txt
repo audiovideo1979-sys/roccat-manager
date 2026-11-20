@@ -13,6 +13,12 @@ ROCCAT Manager Full — Changelog
     "Profiles: saved on this PC" (grey) instead of an amber "Google Drive folder not found";
     the warning stays on a PC that used the shared folder before (/api/data-location
     "was_shared"). Tests: 138 pass.
+  - v1.0.0 published (owner ran the workflow; Claude's GitHub access can't start workflows or
+    push tags). On GitHub's Windows runner the 138 tests and the drivefolders ctypes check
+    passed; ROCCAT.Manager.exe is 76.6 MB, sha256 0776a712...2df1cf5. Checked from the
+    downloaded asset (PyInstaller archive, not executed): today's index.html (X-Profiles-Source,
+    reloadPending, "saved on this PC"), server + drivefolders modules, and hid.cp312-win_amd64.pyd
+    (hidapi 0.15.0) for PCs without Swarm II are all inside. Not yet run on a mouse.
 
 @7 — 2026-11-20 (both boots share the app and profiles through Google Drive, no setup)
   - drivefolders.py: finds the Google Drive "Personal" projects folder on any drive letter

@@ -42,7 +42,8 @@ The old `ROCCAT_MANAGER_DATA` variable still works and still wins if it is set.
 
 The quickest way: download **ROCCAT.Manager.exe** from
 [the latest release](https://github.com/audiovideo1979-sys/roccat-manager/releases/latest) (GitHub builds it)
-and save it into `ROCCAT_Manager_Full` as **`ROCCAT Manager.exe`**. No Python needed. Or build it yourself
+and save it into `ROCCAT_Manager_Full` as **`ROCCAT Manager.exe`** (rename it: with a space, no dot). No
+Python needed. Or build it yourself
 on the Personal boot, as in step 2 below.
 
 ## Personal boot — once
