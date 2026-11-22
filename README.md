@@ -33,6 +33,13 @@ double-click it.
 
 If a keyboard key ever seems stuck after a push (for example Ctrl or Alt), click **Release stuck keys**.
 
+### Load your main profile when Windows starts
+
+At the bottom left, **When Windows starts on this PC, load:** pick a slot (for example "Gaming 1 - My profile").
+About 15 seconds after you sign in to Windows, the app writes that profile to the mouse, switches to it and
+closes again, without opening a window. Pick **Nothing** to turn it off. It keeps a copy of the app in
+`%LOCALAPPDATA%\ROCCAT Manager\app` for this; Windows lists it under Task Manager > Startup apps.
+
 Your profiles are saved on your PC in `%APPDATA%\ROCCAT Manager\profiles`. The line at the bottom left of the
 app says where.
 

@@ -21,6 +21,7 @@ FROZEN = getattr(sys, "frozen", False)   # running as a PyInstaller-built .exe
 if not FROZEN and str(Path(__file__).parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).parent))
 import drivefolders  # noqa: E402  (finds Google Drive's "My Drive" on any drive letter)
+import winstartup    # noqa: E402  (this PC's "load my main profile when Windows starts")
 
 
 def _bundle_base():
@@ -407,7 +408,8 @@ def get_stored():
 
 
 # Writes that are harmless whatever profiles the page holds (keyboard fix, settings, diagnostics, a plain switch)
-_ANY_PAGE_MAY_WRITE = ("/api/release-modifiers", "/api/mouse/config", "/api/mouse/read-pages", "/api/switch-profile/")
+_ANY_PAGE_MAY_WRITE = ("/api/release-modifiers", "/api/mouse/config", "/api/mouse/read-pages", "/api/switch-profile/",
+                       "/api/this-pc")
 
 def _is_profile_write():
     return (request.method in ("POST", "PUT", "DELETE") and request.path.startswith("/api/")
@@ -729,25 +731,94 @@ def list_actions():
                     "keys": sorted(kxp_actions.HID_KEYS.keys()), "modifiers": list(kxp_actions.MODIFIER_BITS.keys())})
 
 
-@app.route("/api/push-slot", methods=["POST"])
-def push_slot():
-    """Push the profile assigned to one onboard slot and leave the mouse on that slot.
-    body: {boot_id, slot (1-5)}"""
-    body = request.get_json() or {}
-    boot_id = body.get("boot_id", "boot1")
-    slot = int(body.get("slot", 0))
+def push_slot_job(boot_id, slot):
+    """Write the profile assigned to one onboard slot (1-5) and leave the mouse on that slot.
+    A request that can't be done (no such slot / nothing assigned) comes back with "bad_request"."""
     if not 1 <= slot <= 5:
-        return jsonify({"success": False, "error": "slot must be 1-5"}), 400
+        return {"success": False, "error": "slot must be 1-5", "bad_request": True}
     assigned = dict(slot_assignments(boot_id))
     if slot - 1 not in assigned:
-        return jsonify({"success": False, "error": "slot %d has no profile assigned" % slot}), 400
+        return {"success": False, "error": "slot %d has no profile assigned" % slot, "bad_request": True}
     profile = assigned[slot - 1]
 
     def job(mouse):
         summary = mouse.push_profile(slot - 1, profile_for_push(profile))
         return {"message": "Pushed %s to slot %d" % (profile["name"], slot), "pushed": [summary],
                 "active_slot": slot - 1, "unsupported": summary["unsupported"]}
-    return jsonify(run_mouse_job(job))
+    return run_mouse_job(job)
+
+
+@app.route("/api/push-slot", methods=["POST"])
+def push_slot():
+    """Push the profile assigned to one onboard slot and leave the mouse on that slot.
+    body: {boot_id, slot (1-5)}"""
+    body = request.get_json() or {}
+    result = push_slot_job(body.get("boot_id", "boot1"), int(body.get("slot", 0)))
+    if result.pop("bad_request", False):
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+def load_startup_profile(boot_id, slot, attempts=3, pause=10, sleep=time.sleep):
+    """At Windows login (desktop.py --startup): write this PC's main profile to the mouse and switch to it.
+    Never writes the built-in examples of a shared folder that has nothing in it yet (Google Drive not
+    synced), and tries again if the mouse isn't answering yet (still waking up)."""
+    if profiles_source() == "none":
+        return {"success": False, "skipped": "no profiles in the shared Google Drive folder yet"}
+    try:
+        load_stored()
+    except (OSError, ValueError) as e:
+        return {"success": False, "skipped": "can't read the profiles: %s" % e}
+    result = {}
+    for attempt in range(1, attempts + 1):
+        result = push_slot_job(boot_id, slot)
+        if result.get("success") or result.get("bad_request"):
+            break
+        if attempt < attempts:
+            sleep(pause)
+    result["attempts"] = attempt
+    return result
+
+
+# ── This PC: load a main profile when Windows starts ─────────────────────────
+STARTUP_SUPPORTED = FROZEN and os.name == "nt"     # the Windows app only (a login entry needs the .exe)
+_STARTUP_REG = None                                # tests put a stand-in for winreg here
+
+
+def _app_exe():
+    return sys.executable
+
+
+def _this_pc_state():
+    settings = winstartup.load_settings()
+    state = {"success": True, "supported": STARTUP_SUPPORTED, "startup": settings.get("startup"),
+             "enabled": False}
+    if STARTUP_SUPPORTED:
+        try:
+            state["enabled"] = winstartup.run_entry(_STARTUP_REG) is not None
+        except OSError:
+            pass
+    return state
+
+
+@app.route("/api/this-pc", methods=["GET", "PUT"])
+def this_pc():
+    """GET: what this PC loads at Windows startup. PUT {startup: {boot_id, slot} | null}: change it."""
+    if request.method == "GET":
+        return jsonify(_this_pc_state())
+    if not STARTUP_SUPPORTED:
+        return jsonify({"success": False, "error": "Loading a profile at Windows startup works in the Windows app only"}), 400
+    choice = (request.get_json() or {}).get("startup")
+    try:
+        if choice is None:
+            winstartup.disable(_STARTUP_REG)
+        elif not winstartup.valid_choice(choice):
+            return jsonify({"success": False, "error": "choose a slot 1-5 of Gaming or Work"}), 400
+        else:
+            winstartup.enable(choice, _app_exe(), _STARTUP_REG)
+    except OSError as e:
+        return jsonify({"success": False, "error": "Couldn't change the Windows startup setting: %s" % e}), 500
+    return jsonify(_this_pc_state())
 
 
 @app.route("/api/import-to-mouse", methods=["POST"])

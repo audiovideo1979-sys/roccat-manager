@@ -3,7 +3,7 @@
 ## On session start
 1. Read `HANDOFF.md` (state, open questions, the protocol reference).
 2. `CHANGELOG.txt` has the latest @N — continue from there.
-3. Run `python -m pytest -q tests` — 138 tests, no hardware needed. Keep it green.
+3. Run `python -m pytest -q tests` — 155 tests, no hardware needed. Keep it green.
 
 ## What it is
 Web UI (Flask, port 5555) that manages the five onboard profiles of a ROCCAT Kone XP Air (DPI, button
@@ -15,7 +15,9 @@ its USB receiver (VID 0x10F5, receiver PID 0x5017).
   codes, `sequences.py` op lists that reproduce the captured Swarm traffic, `transport.py`
   (RecordingTransport for tests, DirectHidTransport, FridaTransport + `frida_executor.js`),
   `session.py` (`KoneXPAir`), `datfile.py` (.dat exports).
-- `ROCCAT_Manager/server.py` — Flask API; `templates/index.html` — single-file SPA;
+- `ROCCAT_Manager/server.py` — Flask API; `drivefolders.py` (finds Google Drive), `winstartup.py` (this PC's
+  "load my main profile at Windows startup": registry Run entry, local exe copy, login flow);
+  `templates/index.html` — single-file SPA;
   `profiles/stored.json` (profile library), `profiles/slots.json` (boot1/boot2 -> 5 profile ids),
   `profiles/mouse_config.json` (transport + protocol options).
 - `tools/` — Windows-only diagnostics (see `RUN_ON_PC.md`). `tests/` — pytest.
@@ -54,6 +56,7 @@ its USB receiver (VID 0x10F5, receiver PID 0x5017).
 | POST | `/api/import-dat` (file or `{source:'onboard'}`) | stored profiles from Swarm exports |
 | GET | `/api/export/{id}`, `/api/export-all/{boot}` | legacy .dat export (zero checksums) |
 | GET | `/api/actions` | names the encoder supports |
+| GET/PUT | `/api/this-pc` `{startup: {boot_id, slot} \| null}` | this Windows install's main profile at login (Windows app only); `desktop.py --startup` loads it and exits |
 | GET | `/api/data-location` | profiles folder in use: `path`, `how` (env/shared/local/dev), `shared`, `has_profiles`, `readable`, `source` (none/examples/saved), `migration` (copied/not-merged/copy-failed/null), `local_path`. `GET /api/stored` also returns `source`; a write whose `X-Profiles-Source` header differs from the current source gets 409 + reload; write responses carry the new source |
 
 ## Rules

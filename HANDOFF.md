@@ -1,5 +1,15 @@
 # ROCCAT Manager — Handoff
 
+## Main profile at Windows startup (2026-11-22, not yet run on the PC)
+
+Per side: the sidebar's "When Windows starts on this PC, load:" stores {boot_id, slot} in
+`%APPDATA%\ROCCAT Manager\this_pc.json` and adds the HKCU Run entry for a local copy of the exe
+(`%LOCALAPPDATA%\ROCCAT Manager\app`). At login (`desktop.py --startup`, `winstartup.run_at_login`) it waits for
+the shared Drive profiles, writes that slot through `push_slot_job` (the confirmed push path) and exits; output
+in `startup.log`. A named mutex keeps it to one instance. Needs a new release (the owner runs the workflow) and
+the new exe in the Drive folder before it can be tried. To check on the PC: Task Manager > Startup apps lists
+"ROCCAT Manager"; after a sign-in, startup.log ends with "startup: {... 'success': True ...}".
+
 ## Public release (2026-11-20)
 
 The owner wants to share the app with a friend. Public home: `audiovideo1979-sys/roccat-manager` (main),

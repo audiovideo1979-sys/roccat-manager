@@ -1,6 +1,26 @@
 ROCCAT Manager Full — Changelog
 ================================
 
+@9 — 2026-11-22 (main profile at Windows startup, per side)
+  - Owner's request: start with Windows and load the main profile. Owner's choices: write the
+    profile then switch (not just switch: the other boot may have put another profile in that
+    slot), a different main profile per side, and close afterwards (no window at login).
+  - ROCCAT_Manager/winstartup.py: the choice {boot_id, slot} is saved per Windows install in
+    %APPDATA%\ROCCAT Manager\this_pc.json (never in Drive). Turning it on copies the running exe to
+    %LOCALAPPDATA%\ROCCAT Manager\app\ROCCAT Manager.exe and sets HKCU ...\CurrentVersion\Run
+    "ROCCAT Manager" = "<that copy>" --startup (Drive's letter may not be mounted at login).
+    Opening the app normally refreshes that copy from a newer exe (never downgrades).
+  - desktop.py: one instance at a time (named mutex; a second launch shows a message instead of
+    a second window - two copies must never write to the mouse at once). --startup: wait up to
+    180 s for the shared Drive profiles (only on a PC that shares), then
+    server.load_startup_profile, then exit without a window; logged to startup.log.
+  - server.py: push_slot_job (the push-slot route's body, unchanged behaviour), used by
+    load_startup_profile, which never writes the built-in examples (empty shared folder) or an
+    unreadable set and retries a mouse that isn't answering yet (3 tries, 10 s apart).
+    GET/PUT /api/this-pc (Windows app only; exempt from the X-Profiles-Source guard).
+  - Sidebar: "When Windows starts on this PC, load:" with every assigned Gaming/Work slot by
+    name, or Nothing. Checked in Chromium against the real server with a stand-in registry.
+
 @8 — 2026-11-20 (public download for other people)
   - Public home: github.com/audiovideo1979-sys/roccat-manager (main). README.md written for
     someone who just wants the program: download, SmartScreen, what you need, how to use it.

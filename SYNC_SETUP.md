@@ -100,6 +100,16 @@ always on the disk even before Drive has finished starting.
 - If Drive ever ends up with the other boot's examples-based copy instead of the profiles this boot
   brought in, this boot copies its own in again on its next start (the other copy goes to `replaced-<date>`).
 
+## Main profile at Windows startup (each boot its own)
+
+In the app on each boot, choose **When Windows starts on this PC, load:** (bottom left), e.g. "Gaming 1" on the
+Personal boot and "Work 1" on the Work boot. The choice is saved on that Windows install only (not in Drive).
+At sign-in a copy of the app kept on that PC's own disk (`%LOCALAPPDATA%\ROCCAT Manager\app`, because the
+Drive letter may not be ready yet) waits for Google Drive to show the shared profiles, writes that slot's
+profile to the mouse, switches to it, and closes. It never writes the built-in examples: if Drive hasn't
+delivered your profiles within 3 minutes, nothing is loaded. Opening the app normally keeps that local copy
+up to date with the one in Drive.
+
 ## Updating the app later
 - On the Personal boot, close ROCCAT Manager, then in Command Prompt:
   ```

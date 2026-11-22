@@ -679,6 +679,11 @@
       <button class="export-all-btn" onclick="pushToMouse()" style="background:var(--green-dim);border-color:var(--green);color:var(--green-txt);">Push to Mouse</button>
       <button class="export-all-btn" onclick="pushAllSlots()" style="margin-top:6px;">Push all 5 slots</button>
       <button class="export-all-btn" onclick="releaseKeys()" style="margin-top:6px;" title="If Ctrl/Alt/Shift feels stuck after switching profiles, click this to release it">Release stuck keys</button>
+      <div id="startup-row" style="display:none;margin-top:8px;font-size:11px;color:var(--text3);"
+           title="Set on each Windows side separately. About 15 seconds after you sign in, the app writes this profile to the mouse, switches to it, and closes again - no window.">
+        <div>When Windows starts on this PC, load:</div>
+        <select id="startup-select" onchange="setStartup(this.value)" style="width:100%;margin-top:3px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;"></select>
+      </div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:var(--text3);">
         <span>Transport</span>
         <select id="transport-select" onchange="setTransport(this.value)" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;">
@@ -996,6 +1001,48 @@ async function loadDataLocation() {
   }
 }
 
+// ── Windows startup (this PC) ──────────────────────────────────────────────
+function startupOptionText(s) {
+  return s ? `${s.boot_id === 'boot2' ? 'Work' : 'Gaming'} ${s.slot}` : '';
+}
+async function loadStartupChoice() {
+  const row = document.getElementById('startup-row');
+  try {
+    const st = await (await fetch('/api/this-pc')).json();
+    if (!st.supported) { row.style.display = 'none'; return; }
+    const boots = await Promise.all(['boot1', 'boot2'].map(b => fetch('/api/slots/' + b).then(r => r.json())));
+    const sel = document.getElementById('startup-select');
+    sel.innerHTML = '';
+    const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); };
+    add('', "Nothing (don't start with Windows)");
+    [['boot1', 'Gaming'], ['boot2', 'Work']].forEach(([id, label], i) => {
+      (boots[i].slots || []).forEach(s => { if (s.profile) add(`${id}:${s.slot}`, `${label} ${s.slot} - ${s.profile.name}`); });
+    });
+    const cur = st.enabled && st.startup ? `${st.startup.boot_id}:${st.startup.slot}` : '';
+    if (cur && ![...sel.options].some(o => o.value === cur)) add(cur, `${startupOptionText(st.startup)} - (empty now: nothing will load)`);
+    sel.value = cur;
+    row.style.display = '';
+  } catch (e) {
+    row.style.display = 'none';
+  }
+}
+async function setStartup(value) {
+  const sel = document.getElementById('startup-select');
+  const label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '';
+  const [boot_id, slot] = value ? value.split(':') : [];
+  const body = { startup: value ? { boot_id, slot: Number(slot) } : null };
+  try {
+    const res = await fetch('/api/this-pc', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await res.json();
+    if (!d.success) throw new Error(d.error || "Couldn't change the Windows startup setting");
+    toast(value ? `When Windows starts on this PC, ${label} will be loaded onto the mouse`
+                : "This PC won't load a profile when Windows starts", 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+  await loadStartupChoice();
+}
+
 async function loadAll() {
   setStatus('Loading...');
   let profilesFailed = false;
@@ -1007,6 +1054,7 @@ async function loadAll() {
   try { await loadMouseStatus(); } catch (e) { /* the status line says what it can */ }
   if (profilesFailed) setStatus("Couldn't load the profiles - see the note at the bottom left");  // after the mouse status, so it stays
   await loadDataLocation();   // always: it explains a profiles file that can't be read
+  await loadStartupChoice();
 }
 
 // ── Active Slots Rendering ─────────────────────────────────────────────────
