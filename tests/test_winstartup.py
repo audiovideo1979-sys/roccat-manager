@@ -73,7 +73,7 @@ def test_enable_copies_the_app_locally_and_adds_the_login_entry(reg, tmp_path):
     ws.enable({'boot_id': 'boot2', 'slot': 1}, drive_exe, reg, settings, local)
     assert local.read_bytes() == drive_exe.read_bytes()
     assert ws.run_entry(reg) == '"%s" --startup' % local, "Windows starts the local copy, not the one in Drive"
-    assert ws.load_settings(settings) == {'startup': {'boot_id': 'boot2', 'slot': 1}}
+    assert ws.load_settings(settings) == {'startup': {'boot_id': 'boot2', 'slot': 1, 'shared': False}}
     ws.disable(reg, settings)
     assert ws.run_entry(reg) is None and ws.load_settings(settings) == {}
     ws.disable(reg, settings)                                  # turning it off twice is fine
@@ -130,7 +130,7 @@ def choose(env, boot_id='boot1', slot=1):
 def test_login_with_nothing_chosen_does_nothing(tmp_path):
     env = env_for(tmp_path, shares=True)
     calls = []
-    out = ws.run_at_login(lambda b, s: calls.append((b, s)) or {'success': True}, lambda n: None,
+    out = ws.run_at_login(lambda c: calls.append(c) or {'success': True}, lambda n: None,
                           log=lambda m: None, settings_path=ws.settings_file(env), env=env)
     assert out == 'nothing-chosen' and calls == []
 
@@ -147,10 +147,11 @@ def test_login_waits_for_google_drive_then_loads(tmp_path):
             if i == 2:
                 (drive / 'profiles').mkdir(parents=True)
                 (drive / 'profiles' / 'stored.json').write_text('{"profiles": []}')
+                (drive / 'profiles' / 'slots.json').write_text('{"boot1": [null, null, null, null, null]}')
             if ready():
                 return True
         return False
-    out = ws.run_at_login(lambda b, s: calls.append((b, s)) or {'success': True},
+    out = ws.run_at_login(lambda c: calls.append((c['boot_id'], c['slot'])) or {'success': True},
                           lambda name: drive if drive.exists() else None,
                           log=lambda m: None, settings_path=ws.settings_file(env), env=env, wait=wait)
     assert out == 'loaded' and calls == [('boot2', 3)] and len(checks) == 3
@@ -160,7 +161,7 @@ def test_login_loads_nothing_if_google_drive_never_shows_up(tmp_path):
     env = env_for(tmp_path, shares=True)
     choose(env)
     calls, logged = [], []
-    out = ws.run_at_login(lambda b, s: calls.append((b, s)), lambda name: None, log=logged.append,
+    out = ws.run_at_login(lambda c: calls.append(c), lambda name: None, log=logged.append,
                           settings_path=ws.settings_file(env), env=env, wait=lambda ready: ready())
     assert out == 'no-drive' and calls == [] and 'did not appear' in logged[0]
 
@@ -169,10 +170,55 @@ def test_a_pc_that_does_not_share_loads_straight_away(tmp_path):
     env = env_for(tmp_path, shares=False)
     choose(env)
     calls = []
-    out = ws.run_at_login(lambda b, s: calls.append((b, s)) or {'success': False}, lambda n: None,
+    out = ws.run_at_login(lambda c: calls.append((c['boot_id'], c['slot'])) or {'success': False}, lambda n: None,
                           log=lambda m: None, settings_path=ws.settings_file(env), env=env,
                           wait=lambda ready: pytest.fail('should not wait for Google Drive'))
     assert out == 'failed' and calls == [('boot1', 1)]
+
+
+def test_login_waits_for_drive_when_the_choice_came_from_drive_even_without_a_note(tmp_path):
+    env = env_for(tmp_path, shares=False)
+    ws.save_settings({'startup': {'boot_id': 'boot1', 'slot': 1, 'shared': True}}, ws.settings_file(env))
+    waited, calls = [], []
+    out = ws.run_at_login(lambda c: calls.append(c), lambda n: None, log=lambda m: None,
+                          settings_path=ws.settings_file(env), env=env, wait=lambda ready: waited.append(1) or ready())
+    assert out == 'no-drive' and waited == [1] and calls == []
+
+
+def test_drive_files_that_cannot_be_read_yet_keep_the_login_waiting(tmp_path):
+    drive = tmp_path / 'ROCCAT Manager Data'
+    (drive / 'profiles').mkdir(parents=True)
+    find = lambda name: drive
+    (drive / 'profiles' / 'stored.json').write_text('{"profiles": [')      # listed, not downloaded yet
+    assert ws.shared_profiles_ready(find, env={}) is False
+    (drive / 'profiles' / 'stored.json').write_text('{"profiles": []}')
+    (drive / 'profiles' / 'slots.json').write_text('')
+    assert ws.shared_profiles_ready(find, env={}) is False
+    (drive / 'profiles' / 'slots.json').write_text('{}')
+    assert ws.shared_profiles_ready(find, env={}) is True
+
+
+def test_a_crash_while_loading_is_logged_not_shown(tmp_path):
+    env = env_for(tmp_path, shares=False)
+    choose(env)
+    logged = []
+
+    def boom(choice):
+        raise ValueError('Expecting value: line 1 column 1')
+    out = ws.run_at_login(boom, lambda n: None, log=logged.append, settings_path=ws.settings_file(env), env=env)
+    assert out == 'failed' and 'ValueError' in logged[0]
+
+
+def test_task_manager_switching_it_off_is_noticed_and_choosing_again_turns_it_back_on(reg, tmp_path):
+    exe, local, settings = make_exe(tmp_path / 'a.exe'), tmp_path / 'l' / 'ROCCAT Manager.exe', tmp_path / 's.json'
+    ws.enable({'boot_id': 'boot1', 'slot': 1}, exe, reg, settings, local)
+    assert ws.turned_off_in_windows(reg) is False
+    reg.values[ws.APPROVED_KEY] = {ws.RUN_VALUE: b'\x03\x00\x00\x00' + bytes(8)}    # what Task Manager writes
+    assert ws.turned_off_in_windows(reg) is True and ws.run_entry(reg) is not None
+    ws.enable({'boot_id': 'boot1', 'slot': 1}, exe, reg, settings, local)
+    assert ws.turned_off_in_windows(reg) is False
+    reg.values[ws.APPROVED_KEY][ws.RUN_VALUE] = b'\x02' + bytes(11)                  # switched on again there
+    assert ws.turned_off_in_windows(reg) is False
 
 
 def test_wait_for_gives_up_after_the_timeout():
@@ -213,9 +259,38 @@ def server(tmp_path, monkeypatch):
 
 
 def test_login_writes_this_sides_main_profile_and_switches_to_it(server):
-    r = server.load_startup_profile('boot2', 1, sleep=lambda s: None)
+    before = server.SLOTS_FILE.read_text()
+    r = server.load_startup_profile('boot2', 1, shared=True, sleep=lambda s: None)
     assert r['success'] and r['message'] == 'Pushed AutoCAD to slot 1' and r['attempts'] == 1
-    assert server.load_active_slot() == 0
+    assert r['switched_to'] == 0
+    # review: the login run only reads - Drive may not have fetched the other side's changes yet
+    assert server.SLOTS_FILE.read_text() == before and server.load_active_slot() is None
+
+
+def test_push_to_mouse_still_remembers_the_active_slot(server):
+    r = server.app.test_client().post('/api/push-slot', json={'boot_id': 'boot1', 'slot': 1}).get_json()
+    assert r['success'] and r['active_slot'] == 0 and server.load_active_slot() == 0
+    assert server.app.test_client().post('/api/push-slot', json={'boot_id': 'boot1', 'slot': 3}).status_code == 400
+
+
+def test_a_choice_made_from_drive_never_falls_back_to_this_pcs_old_profiles(server):
+    # review: a side whose own profiles were "not merged" has no note, so nothing else says it shares
+    server.DATA_HOW = 'local'                                   # Google Drive not found at login
+    jobs = []
+    server.run_mouse_job = lambda fn: jobs.append(fn) or {'success': True}
+    r = server.load_startup_profile('boot1', 1, shared=True, sleep=lambda s: None)
+    assert r['success'] is False and 'not found' in r['skipped'] and jobs == []
+
+
+def test_a_file_that_cannot_be_read_yet_is_retried_not_an_error_window(server):
+    server.SLOTS_FILE.write_text('')                            # Drive still downloading it
+    naps = []
+
+    def drive_catches_up(s):
+        naps.append(s)
+        server.SLOTS_FILE.write_text(json.dumps({'boot1': ['gaming', None, None, None, None]}))
+    r = server.load_startup_profile('boot1', 1, sleep=drive_catches_up)
+    assert r['success'] and r['attempts'] == 2 and naps == [10]
 
 
 def test_login_never_writes_the_built_in_examples(server, tmp_path):
@@ -255,7 +330,10 @@ def test_choosing_and_clearing_the_startup_profile(server, tmp_path):
     client = server.app.test_client()
     stale = {'X-Profiles-Source': 'none'}                      # not profile data: a stale page may change it
     r = client.put('/api/this-pc', json={'startup': {'boot_id': 'boot2', 'slot': 1}}, headers=stale).get_json()
-    assert r['enabled'] is True and r['startup'] == {'boot_id': 'boot2', 'slot': 1}
+    assert r['enabled'] is True and r['startup'] == {'boot_id': 'boot2', 'slot': 1, 'shared': True}
+    assert r['turned_off_in_windows'] is False
+    server._STARTUP_REG.values[ws.APPROVED_KEY] = {ws.RUN_VALUE: b'\x03' + bytes(11)}
+    assert client.get('/api/this-pc').get_json()['turned_off_in_windows'] is True
     assert ws.installed_exe().exists()
     assert client.put('/api/this-pc', json={'startup': {'boot_id': 'boot2', 'slot': 9}}).status_code == 400
     r = client.put('/api/this-pc', json={'startup': None}).get_json()

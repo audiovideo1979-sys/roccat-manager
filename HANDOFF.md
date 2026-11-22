@@ -6,7 +6,12 @@ Per side: the sidebar's "When Windows starts on this PC, load:" stores {boot_id,
 `%APPDATA%\ROCCAT Manager\this_pc.json` and adds the HKCU Run entry for a local copy of the exe
 (`%LOCALAPPDATA%\ROCCAT Manager\app`). At login (`desktop.py --startup`, `winstartup.run_at_login`) it waits for
 the shared Drive profiles, writes that slot through `push_slot_job` (the confirmed push path) and exits; output
-in `startup.log`. A named mutex keeps it to one instance. Needs a new release (the owner runs the workflow) and
+in `startup.log`. A named mutex keeps it to one instance (a NULL handle, e.g. an elevated copy, counts as running). The login
+run only reads the shared folder (no active-slot write, no first-run copying: `ROCCAT_MANAGER_AT_LOGIN`),
+waits until the shared files parse, never falls back to local profiles for a choice made from Drive
+(`this_pc.json` `startup.shared`), logs instead of raising, and is killed after 10 minutes. Known limit: if
+Drive serves its cached copy before fetching the other side's latest edit, the login can load the previous
+version of the main profile (open the app and push to fix). Needs a new release (the owner runs the workflow) and
 the new exe in the Drive folder before it can be tried. To check on the PC: Task Manager > Startup apps lists
 "ROCCAT Manager"; after a sign-in, startup.log ends with "startup: {... 'success': True ...}".
 

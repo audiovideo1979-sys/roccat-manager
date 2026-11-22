@@ -20,6 +20,18 @@ ROCCAT Manager Full — Changelog
     GET/PUT /api/this-pc (Windows app only; exempt from the X-Profiles-Source guard).
   - Sidebar: "When Windows starts on this PC, load:" with every assigned Gaming/Work slot by
     name, or Nothing. Checked in Chromium against the real server with a stand-in registry.
+  - Review (Windows + behaviour lenses, a skeptic each; 7 of 10 confirmed, all medium/low) fixed:
+    a side whose own profiles were "not merged" (no note) didn't wait for Drive at login and
+    could write its old PC-only profile -> the choice records it was made from the shared
+    folder, the login waits for Drive and never falls back to local; the login run wrote the
+    shared slots.json (active slot) while Drive might still be catching up -> it only reads now
+    (push_slot_job(remember=False), no first-run copying at login); a file Drive listed but
+    hadn't downloaded, or a damaged one, ended the wait early / raised into two error windows
+    at sign-in -> the wait parses the files, read errors are retried, the login run only logs,
+    and a 10-minute watchdog ends it; Task Manager > Startup apps "off" (StartupApproved) wasn't
+    visible and choosing again didn't undo it -> shown in the picker, choosing clears it; a copy
+    started "as administrator" didn't count as running (NULL mutex handle) -> it does.
+    Each fix has a test that fails without it (mutation-checked). Tests: 162 pass.
 
 @8 — 2026-11-20 (public download for other people)
   - Public home: github.com/audiovideo1979-sys/roccat-manager (main). README.md written for

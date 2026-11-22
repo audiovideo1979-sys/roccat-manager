@@ -683,6 +683,7 @@
            title="Set on each Windows side separately. About 15 seconds after you sign in, the app writes this profile to the mouse, switches to it, and closes again - no window.">
         <div>When Windows starts on this PC, load:</div>
         <select id="startup-select" onchange="setStartup(this.value)" style="width:100%;margin-top:3px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;"></select>
+        <div id="startup-note" style="display:none;margin-top:3px;color:var(--amber-txt);"></div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:var(--text3);">
         <span>Transport</span>
@@ -1010,15 +1011,25 @@ async function loadStartupChoice() {
   try {
     const st = await (await fetch('/api/this-pc')).json();
     if (!st.supported) { row.style.display = 'none'; return; }
-    const boots = await Promise.all(['boot1', 'boot2'].map(b => fetch('/api/slots/' + b).then(r => r.json())));
+    // the slot names are a convenience: if they can't be read, still offer Nothing and the current choice
+    const boots = await Promise.all(['boot1', 'boot2'].map(b =>
+      fetch('/api/slots/' + b).then(r => r.json()).catch(() => ({ slots: [] }))));
     const sel = document.getElementById('startup-select');
+    const note = document.getElementById('startup-note');
     sel.innerHTML = '';
     const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); };
     add('', "Nothing (don't start with Windows)");
     [['boot1', 'Gaming'], ['boot2', 'Work']].forEach(([id, label], i) => {
       (boots[i].slots || []).forEach(s => { if (s.profile) add(`${id}:${s.slot}`, `${label} ${s.slot} - ${s.profile.name}`); });
     });
-    const cur = st.enabled && st.startup ? `${st.startup.boot_id}:${st.startup.slot}` : '';
+    let cur = st.enabled && st.startup ? `${st.startup.boot_id}:${st.startup.slot}` : '';
+    note.style.display = 'none';
+    if (cur && st.turned_off_in_windows) {
+      // switched off in Task Manager > Startup apps: show it off here too; picking it again turns it back on
+      note.textContent = `${startupOptionText(st.startup)} is turned off in Windows (Task Manager > Startup apps). Pick it again here to turn it back on.`;
+      note.style.display = '';
+      cur = '';
+    }
     if (cur && ![...sel.options].some(o => o.value === cur)) add(cur, `${startupOptionText(st.startup)} - (empty now: nothing will load)`);
     sel.value = cur;
     row.style.display = '';

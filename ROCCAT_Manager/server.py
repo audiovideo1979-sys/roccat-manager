@@ -279,7 +279,7 @@ from kone_xp_air.session import KoneXPAir  # noqa: E402
 from kone_xp_air.transport import make_transport, TransportError, is_swarm_running, format_results, kill_swarm  # noqa: E402
 from kone_xp_air.winput import release_modifiers  # noqa: E402
 
-if FROZEN:
+if FROZEN and not os.environ.get("ROCCAT_MANAGER_AT_LOGIN"):   # the login run only reads (desktop.py)
     MIGRATION = prepare_profiles()
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
@@ -731,9 +731,10 @@ def list_actions():
                     "keys": sorted(kxp_actions.HID_KEYS.keys()), "modifiers": list(kxp_actions.MODIFIER_BITS.keys())})
 
 
-def push_slot_job(boot_id, slot):
+def push_slot_job(boot_id, slot, remember=True):
     """Write the profile assigned to one onboard slot (1-5) and leave the mouse on that slot.
-    A request that can't be done (no such slot / nothing assigned) comes back with "bad_request"."""
+    A request that can't be done (no such slot / nothing assigned) comes back with "bad_request".
+    remember=False: don't record the active slot (the login run writes nothing to the shared folder)."""
     if not 1 <= slot <= 5:
         return {"success": False, "error": "slot must be 1-5", "bad_request": True}
     assigned = dict(slot_assignments(boot_id))
@@ -744,7 +745,7 @@ def push_slot_job(boot_id, slot):
     def job(mouse):
         summary = mouse.push_profile(slot - 1, profile_for_push(profile))
         return {"message": "Pushed %s to slot %d" % (profile["name"], slot), "pushed": [summary],
-                "active_slot": slot - 1, "unsupported": summary["unsupported"]}
+                ("active_slot" if remember else "switched_to"): slot - 1, "unsupported": summary["unsupported"]}
     return run_mouse_job(job)
 
 
@@ -759,19 +760,21 @@ def push_slot():
     return jsonify(result)
 
 
-def load_startup_profile(boot_id, slot, attempts=3, pause=10, sleep=time.sleep):
+def load_startup_profile(boot_id, slot, shared=False, attempts=3, pause=10, sleep=time.sleep):
     """At Windows login (desktop.py --startup): write this PC's main profile to the mouse and switch to it.
-    Never writes the built-in examples of a shared folder that has nothing in it yet (Google Drive not
-    synced), and tries again if the mouse isn't answering yet (still waking up)."""
+    Only reads profiles: nothing is written to the (possibly not yet synced) shared folder. Never writes the
+    built-in examples of an empty shared folder, never falls back to this PC's own old profiles when the
+    choice was made from the shared ones, and tries again if the mouse or a file isn't ready yet."""
+    if shared and DATA_HOW not in ("shared", "env"):
+        return {"success": False, "skipped": "the Google Drive profiles folder was not found"}
     if profiles_source() == "none":
         return {"success": False, "skipped": "no profiles in the shared Google Drive folder yet"}
-    try:
-        load_stored()
-    except (OSError, ValueError) as e:
-        return {"success": False, "skipped": "can't read the profiles: %s" % e}
     result = {}
     for attempt in range(1, attempts + 1):
-        result = push_slot_job(boot_id, slot)
+        try:
+            result = push_slot_job(boot_id, slot, remember=False)
+        except Exception as e:      # e.g. a profiles file Drive is still downloading
+            result = {"success": False, "error": "can't read the profiles: %s: %s" % (type(e).__name__, e)}
         if result.get("success") or result.get("bad_request"):
             break
         if attempt < attempts:
@@ -792,10 +795,11 @@ def _app_exe():
 def _this_pc_state():
     settings = winstartup.load_settings()
     state = {"success": True, "supported": STARTUP_SUPPORTED, "startup": settings.get("startup"),
-             "enabled": False}
+             "enabled": False, "turned_off_in_windows": False}
     if STARTUP_SUPPORTED:
         try:
             state["enabled"] = winstartup.run_entry(_STARTUP_REG) is not None
+            state["turned_off_in_windows"] = state["enabled"] and winstartup.turned_off_in_windows(_STARTUP_REG)
         except OSError:
             pass
     return state
@@ -815,7 +819,7 @@ def this_pc():
         elif not winstartup.valid_choice(choice):
             return jsonify({"success": False, "error": "choose a slot 1-5 of Gaming or Work"}), 400
         else:
-            winstartup.enable(choice, _app_exe(), _STARTUP_REG)
+            winstartup.enable(choice, _app_exe(), _STARTUP_REG, shared=DATA_HOW in ("shared", "env"))
     except OSError as e:
         return jsonify({"success": False, "error": "Couldn't change the Windows startup setting: %s" % e}), 500
     return jsonify(_this_pc_state())

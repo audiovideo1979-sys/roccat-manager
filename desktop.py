@@ -84,8 +84,15 @@ def _only_instance():
     import ctypes
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.CreateMutexW.restype = ctypes.c_void_p
-    _INSTANCE_MUTEX = k32.CreateMutexW(None, False, "Local\\ROCCATManager.SingleInstance")
-    return ctypes.get_last_error() != 183          # ERROR_ALREADY_EXISTS
+    handle = k32.CreateMutexW(None, False, "Local\\ROCCATManager.SingleInstance")
+    err = ctypes.get_last_error()
+    if not handle:              # e.g. ERROR_ACCESS_DENIED: a copy started "as administrator" holds it
+        return False
+    if err == 183:              # ERROR_ALREADY_EXISTS
+        k32.CloseHandle(ctypes.c_void_p(handle))
+        return False
+    _INSTANCE_MUTEX = handle
+    return True
 
 
 def _message(text):
@@ -103,14 +110,22 @@ def _log(text):
 
 def run_at_login():
     """Started by Windows at login (--startup): load this PC's main profile onto the mouse, then exit.
-    No window."""
-    import winstartup
-    import drivefolders
+    No window, no error boxes (everything goes to startup.log), and never longer than 10 minutes."""
+    import threading
+    watchdog = threading.Timer(600, os._exit, (3,))
+    watchdog.daemon = True
+    watchdog.start()
+    try:
+        import winstartup
+        import drivefolders
+        os.environ["ROCCAT_MANAGER_AT_LOGIN"] = "1"     # server.py: read only, no first-run copying
 
-    def load(boot_id, slot):
-        import server   # only now: the profiles folder is chosen when server is imported
-        return server.load_startup_profile(boot_id, slot)
-    winstartup.run_at_login(load, drivefolders.find, log=_log)
+        def load(choice):
+            import server   # only now: the profiles folder is chosen when server is imported
+            return server.load_startup_profile(choice["boot_id"], choice["slot"], shared=choice.get("shared", False))
+        winstartup.run_at_login(load, drivefolders.find, log=_log)
+    except Exception:
+        _log("startup: failed:\n" + traceback.format_exc())
 
 
 def main():
@@ -119,7 +134,8 @@ def main():
     if not _only_instance():
         if not at_login:
             _message("ROCCAT Manager is already open, or it is loading your main profile onto the mouse "
-                     "(that takes about 15 seconds after Windows starts).\n\nTry again in a moment.")
+                     "(after Windows starts that can take a minute or two while Google Drive starts up)."
+                     "\n\nTry again in a moment.")
         return
     if at_login:
         run_at_login()

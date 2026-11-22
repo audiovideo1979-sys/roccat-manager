@@ -3,7 +3,7 @@
 ## On session start
 1. Read `HANDOFF.md` (state, open questions, the protocol reference).
 2. `CHANGELOG.txt` has the latest @N — continue from there.
-3. Run `python -m pytest -q tests` — 155 tests, no hardware needed. Keep it green.
+3. Run `python -m pytest -q tests` — 162 tests, no hardware needed. Keep it green.
 
 ## What it is
 Web UI (Flask, port 5555) that manages the five onboard profiles of a ROCCAT Kone XP Air (DPI, button

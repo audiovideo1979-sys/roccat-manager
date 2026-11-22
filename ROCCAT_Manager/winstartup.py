@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+# Task Manager > Startup apps / Settings > Apps > Startup turn a Run entry off here, leaving the Run value in place
+APPROVED_KEY = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
 RUN_VALUE = "ROCCAT Manager"
 STARTUP_ARG = "--startup"
 SETTINGS_NAME = "this_pc.json"
@@ -88,6 +90,27 @@ def set_run_entry(exe, reg=None):
         reg.SetValueEx(key, RUN_VALUE, 0, reg.REG_SZ, '"%s" %s' % (exe, STARTUP_ARG))
 
 
+def turned_off_in_windows(reg=None):
+    """The user switched the entry off in Task Manager > Startup apps (first byte odd = disabled)."""
+    reg = reg or _winreg()
+    try:
+        with reg.OpenKey(reg.HKEY_CURRENT_USER, APPROVED_KEY, 0, reg.KEY_READ) as key:
+            data, _ = reg.QueryValueEx(key, RUN_VALUE)
+            return bool(data) and (bytes(data)[0] & 1) == 1
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def clear_windows_off_switch(reg=None):
+    """Choosing a profile in the app turns the entry back on, even if it was switched off in Task Manager."""
+    reg = reg or _winreg()
+    try:
+        with reg.OpenKey(reg.HKEY_CURRENT_USER, APPROVED_KEY, 0, reg.KEY_SET_VALUE) as key:
+            reg.DeleteValue(key, RUN_VALUE)
+    except OSError:
+        pass
+
+
 def remove_run_entry(reg=None):
     reg = reg or _winreg()
     try:
@@ -124,15 +147,17 @@ def install_copy(src, dest):
     return True
 
 
-def enable(choice, exe, reg=None, settings_path=None, dest=None):
-    """Load choice = {boot_id, slot} at every Windows login on this PC."""
+def enable(choice, exe, reg=None, settings_path=None, dest=None, shared=False):
+    """Load choice = {boot_id, slot} at every Windows login on this PC. shared: it was chosen from the
+    profiles in the shared Google Drive folder, so at login it is only ever loaded from there."""
     if not valid_choice(choice):
         raise ValueError("choose a slot 1-5 of boot1 or boot2")
     dest = Path(dest or installed_exe())
     install_copy(exe, dest)
     set_run_entry(dest, reg)
+    clear_windows_off_switch(reg)
     settings = load_settings(settings_path)
-    settings["startup"] = {"boot_id": choice["boot_id"], "slot": choice["slot"]}
+    settings["startup"] = {"boot_id": choice["boot_id"], "slot": choice["slot"], "shared": bool(shared)}
     save_settings(settings, settings_path)
 
 
@@ -163,14 +188,28 @@ def this_pc_shares(env=None):
     return bool(env.get("ROCCAT_MANAGER_DATA")) or (local_root(env) / "profiles" / MOVED_NOTE).exists()
 
 
+def _readable_json(path):
+    try:
+        with open(path) as f:
+            json.load(f)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def shared_profiles_ready(find, env=None):
-    """Google Drive is up and the shared profiles are there (find = drivefolders.find)."""
+    """Google Drive is up and the shared profiles can actually be read (a file Drive lists but hasn't
+    downloaded yet, or one half-written, keeps us waiting). find = drivefolders.find."""
     env = os.environ if env is None else env
     folder = Path(env["ROCCAT_MANAGER_DATA"]) if env.get("ROCCAT_MANAGER_DATA") else find(SHARED_DATA_NAME)
+    if folder is None:
+        return False
+    profiles = Path(folder) / "profiles"
     try:
-        return folder is not None and (Path(folder) / "profiles" / "stored.json").is_file()
+        slots_ok = not (profiles / "slots.json").exists() or _readable_json(profiles / "slots.json")
     except OSError:
         return False
+    return _readable_json(profiles / "stored.json") and slots_ok
 
 
 def wait_for(ready, timeout=180, interval=3, sleep=time.sleep, clock=time.monotonic):
@@ -184,15 +223,19 @@ def wait_for(ready, timeout=180, interval=3, sleep=time.sleep, clock=time.monoto
 
 
 def run_at_login(load, find, log=print, settings_path=None, env=None, wait=wait_for):
-    """What the copy started at login does. load(boot_id, slot) writes that slot to the mouse
-    (server.load_startup_profile). Returns a short outcome for the log."""
+    """What the copy started at login does. load(choice) writes choice's slot to the mouse
+    (server.load_startup_profile). Returns a short outcome for the log; never raises."""
     choice = load_settings(settings_path).get("startup")
     if not valid_choice(choice):
         log("startup: no main profile chosen on this PC; nothing to do")
         return "nothing-chosen"
-    if this_pc_shares(env) and not wait(lambda: shared_profiles_ready(find, env)):
-        log("startup: the Google Drive profiles folder did not appear; nothing was loaded")
+    if (choice.get("shared") or this_pc_shares(env)) and not wait(lambda: shared_profiles_ready(find, env)):
+        log("startup: the Google Drive profiles did not appear (or could not be read); nothing was loaded")
         return "no-drive"
-    result = load(choice["boot_id"], choice["slot"])
+    try:
+        result = load(choice)
+    except Exception as e:      # a login run only ever logs: no error windows at sign-in
+        log("startup: failed: %s: %s" % (type(e).__name__, e))
+        return "failed"
     log("startup: %s" % (result,))
     return "loaded" if result.get("success") else "failed"
