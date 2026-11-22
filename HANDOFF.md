@@ -1,6 +1,6 @@
 # ROCCAT Manager — Handoff
 
-## Main profile at Windows startup (2026-11-22, not yet run on the PC)
+## Main profile at Windows startup (2026-11-22, released as V1.1.0, not yet run on the PC)
 
 Per side: the sidebar's "When Windows starts on this PC, load:" stores {boot_id, slot} in
 `%APPDATA%\ROCCAT Manager\this_pc.json` and adds the HKCU Run entry for a local copy of the exe

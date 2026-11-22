@@ -32,6 +32,9 @@ ROCCAT Manager Full — Changelog
     visible and choosing again didn't undo it -> shown in the picker, choosing clears it; a copy
     started "as administrator" didn't count as running (NULL mutex handle) -> it does.
     Each fix has a test that fails without it (mutation-checked). Tests: 162 pass.
+  - Released as V1.1.0 (owner ran the workflow; capital V in the tag). Checked from the
+    downloaded asset (sha256 4ddf3776...a39a32): winstartup module, the startup picker, the
+    login code in desktop.py and the hidapi driver are inside. Not yet run on the PC.
 
 @8 — 2026-11-20 (public download for other people)
   - Public home: github.com/audiovideo1979-sys/roccat-manager (main). README.md written for
